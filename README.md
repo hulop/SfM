@@ -1,2 +1,37 @@
+<!--
+The MIT License (MIT)
+
+Copyright (c) 2017 IBM Corporation
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+
 # SfM
-A library for lightweight SLAM for 3D scanning of small objects from a webcam/mobile phone
+A library for lightweight SLAM for 3D scanning of small objects from a webcam/mobile phone.
+
+## Prerequisites
+- [OpenCV 3.0](http://opencv.org/)    (BSD License)
+- [Eigen 3.2.8 (EIGEN_MPL2_ONLY)](http://eigen.tuxfamily.org/) (MPL License 2)
+- [Ceres Solver 3.12.0](http://ceres-solver.org/) (BSD License)
+
+----
+## About
+[About HULOP](https://github.com/hulop/00Readme)
+
+## License
+[MIT](http://opensource.org/licenses/MIT)
