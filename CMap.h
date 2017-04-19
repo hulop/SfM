@@ -24,6 +24,11 @@
 #define CMap_hpp
 
 #include "CFrame.h"
+#include "../../cvUtils/Hashing.h"
+#include "../../cvUtils/VectorUtils.hpp"
+#include <unordered_map>
+#include <bitset>
+#include <list>
 
 using namespace std;
 using namespace cv;
@@ -34,27 +39,50 @@ public:
     ~CMap();
     
     void addPointMatches(const vector<int> &pts3DIdx, const vector<int> &pts2DIdx, const int frameNo);
-    void addNewPoints(const vector<Point3d> &pts3D, const vector<vector<int>> &ptIdx, const vector<int> &frameIdx, vector<int> &pts3DIdx);
+    void addNewPoints(const vector<Matx31d> &pts3D, const vector<vector<int>> &ptIdx, const vector<int> &frameIdx, vector<int> &pts3DIdx);
+    void addDescriptors(const vector<int> &pts3DIdx, const Mat &descriptors);
     
-    void getProjectionsOnFrame(const CFrame &frame, vector<Point2d> &projPoints);
-    void getPointsAtIdx(const vector<int> &pts2DIdx, vector<Point3d> &pts3D);
-    void getPointsInFrame(vector<Point3d> &pts3D, vector<int> &pts2DIdx, const int frameNo);
-    void getPointsInFrame(vector<Point3d> &pts3D, vector<int> &pts3DIdx, vector<int> &pts2DIdx, const int frameNo);
-    void getPoints(vector<Point3d> &pts3D);
+    void removePoints(const vector<int> &ptsCullIdx, vector<int> &newPtsIdx);
+    void removePoints(int threshold, vector<int> &ptsCullIdx, vector<int> &newPtsIdx);
     
-    int getNPoints() {return _pts3D.size();};
+    void getPointsAtIdx(const vector<int> &pts3DIdx, vector<Matx31d> &pts3D);
+    void getPointsInFrame(vector<Matx31d> &pts3D, vector<int> &pts2DIdx, const int frameNo);
+    void getPointsInFrame(vector<int> &pts3DIdx, const int frameNo);
+    void getPointsInFrame(vector<Matx31d> &pts3D, vector<int> &pts3DIdx, vector<int> &pts2DIdx, const int frameNo);
+    void getPointsInFrame_Mutable(vector<double*> &pts3D, vector<int> &pts3DIdx, vector<int> &pts2DIdx, const int frameNo);
+    void getPointsInFrame(vector<int> &pts3DIdx, vector<int> &pts2DIdx, const int frameNo);
+    void getPointsInFrames(vector<Matx31d> &pts3D, vector<int> &pts3DIdx, const vector<int> &frameNo);
+    void getPointsInFrames(vector<int> &pts3DIdx, const vector<int> &frameNo);
+    
+    void getPoints_Mutable(vector<double*> &pts3D);
+    void getPoints(vector<Matx31d> &pts3D);
+    void getFramesConnectedToFrame(int frameNo, vector<int> &covisibleFrames, int threshold = 0);
+    void findNearestNeighbours(const vector<Matx31d> &pts3D, vector<int> &orgPtsIdx, vector<double> &dist);
+    void getRepresentativeDescriptors(const vector<int> &pts3DIdx, Mat &descriptors);
+    
+    int getNPoints();
     
     Point3d getCentroid();
 
 private:
+    
+    int countMatchesBetweenFrames(int f0, int f1);
+    void addCovisiblePoint(int idx0, int idx1, int increment = 1);
     void updateCentroid();
     
     
-    vector<Point3d> _pts3D;
+    vector<Matx31d> _pts3D;
+    vector<Mat> _descriptor;
+    vector<vector<Matx31d>> _viewDir;
     vector<vector<int>> _frameNo;
     vector<vector<int>> _pts2DIdx;
     vector<int> _pts3DIdx;
     int _lastPtNo;
+    
+    unordered_multimap<int,int> _covisibilityFrameIdx;
+    unordered_map<tuple<int,int>,int> _covisibilityGraph;
+    unordered_multimap<int,int> _pointInFrameIdx;
+    unordered_multimap<int,int> _frameViewsPointIdx;
     
     Point3d _centroid;
 };

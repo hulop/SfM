@@ -31,53 +31,80 @@ using namespace std;
 
 class CFrame {
 public:
-    CFrame();
-    CFrame(cv::Mat frameIn);
+    CFrame(const Matx33d &K, const vector<double> &d, const Size &imSize);
+    CFrame(const Mat &frameIn, const Matx33d &K, const vector<double> &d, const Size &imSize);
     ~CFrame();
     CFrame(const CFrame &frame);
     CFrame& operator= (const CFrame &frame);
     
-    void setFrame(Mat frameIn, int frameNo);
-    void setFrame(Mat frameIn, int frameNo, Matx33d K);
-    void setIntrinsic(Matx33d K);
-    void setKeyPoints(const vector<KeyPoint> &kp, const Mat desc);
-    void setKeyPoints(const vector<KeyPoint> &kp);
-
-    void setPoints(const vector<Point2d> &p);
-    void setPoints(const vector<Point2f> &p);
+    //set frames
+    void setFrame(const Mat &frameIn, int frameNo);
+    void setFrame(const Mat &frameIn, int frameNo, const Matx33d &K, const vector<double> &d, const Size &imSize);
     
+    //get frames
     const Mat& getFrame() {return _frame;};
     const Mat& getFrameGrey() {return _frameGrey;};
     
-    void setPose();
-    void setPose(const Matx33d &R, const Vec3d &t);
+    //set features
+    void setKeyPoints(const vector<KeyPoint> &kp, const Mat &desc);
+    void setKeyPoints(const vector<KeyPoint> &kp);
+    void setPoints(const vector<Point2d> &p);
+    void setPoints(const vector<Point2f> &p);
     
+    //get features
     const vector<KeyPoint>& getKeyPoints() const {return _keypts;};
     const vector<Point2d>& getPoints() const {return _pts;};
     void getPoints(vector<Point2f> &pts);
     void getPoints(vector<Point2d> &pts);
-    
+    const vector<Point2d>& getPointsDistorted() const {return _pts_dist;};
     const Mat& getDescriptors() const {return _descriptors;};
+    
+    //set geometric pose
+    void setPose();
+    void setPose(const Matx33d &R, const Matx31d &t);
+    void calculateProjectionMatrix();
+    
+    //get geometric pose
     const Matx34d& getProjectionMatrix() const {return _P;};
-    Mat getRotationRodrigues();
-    const Vec3d& getTranslation() const {return _t;};
-    double* getTranslationMutable() {return _t.val;};
+    const Matx31d& getRotationRodrigues() {return _rot;};
+    double *getRotationRodrigues_Mutable() {return _rot.val;};
+    const Matx31d& getTranslation() const {return _t;};
+    double* getTranslation_Mutable() {return _t.val;};
     const Matx33d& getRotation() const {return _R;};
     
-    int findClosestPointIndex(Point2f pt);
+    //get intrinsics
+    const Matx33d& getIntrinsic() const {return _K;};
+    const Matx33d& getIntrinsicUndistorted() const {return _Kopt;};
+    int getFrameNo() {return _frameNo;};
+    const Size& getImageSize() const {return _imSize;};
     
+    //culling
+    void cullPoints(const vector<int> &pts3DIdx);
+    
+    //get points
+    int findClosestPointIndex(Point2f pt);
+    int findClosestPointIndexDistorted(Point2f pt);
     int getNPoints() {return _pts.size();}
     int getNMatchedPoints();
     void getMatchedPoints(vector<Point2d> &pts2D, vector<int> &pts3DIdx);
     void getMatchedPoints(vector<Point2d> &pts2D, vector<int> &pts3DIdx, vector<int> &pts2DIdx);
-    int getFrameNo() {return _frameNo;};
+    void getMatchedPoints(vector<int> &pts2DIdx, vector<int> &pts3DIdx);
+    void getMatchedPoints(vector<int> &pts3DIdx);
+    void getUnmatchedPoints(vector<Point2d> &pts2D, vector<int> &pts2DIdx);
+    void getUnmatchedPoints(vector<Point2d> &pts2D, Mat &desc, vector<int> &pts2DIdx);
     
+    void getPointsAt(const vector<int> &pts2DIdx, vector<Point2d> &pts2D);
+    void getPointsAt(const vector<int> &pts2DIdx, vector<Point2f> &pts2D);
+    void getDescriptorsAt(const vector<int> &pts2DIdx, Mat &descriptors);
+    
+    //update
     void updatePoints(const vector<Point2d> &pts, const vector<int> &idx, const vector<int> &idx3D);
     void updatePoints(const vector<Point2f> &pts, const vector<int> &idx, const vector<int> &idx3D);
     void updatePoints(const vector<int> &pts2DIdx, const vector<int> &pts3DIdx);
     
 private:
-    void calculateProjectionMatrix();
+    
+    void resetInternals();
     
     int _frameNo;
     
@@ -88,6 +115,7 @@ private:
     //feature data
     Mat _descriptors;
     vector<KeyPoint> _keypts;
+    vector<Point2d> _pts_dist;
     vector<Point2d> _pts;
     vector<uchar> _status; //check if point has been matched already
     vector<float> _statusDist;
@@ -96,14 +124,16 @@ private:
     //3d links
     vector<int> _pts3DIdx;
     
-   // flann::IndexParams _params;
-    
     //camera data
     Matx33d _K;
+    vector<double> _d;
+    Matx33d _Kopt;
+    Size _imSize;
     
     //pose data
     Matx33d _R;
-    Vec3d _t;
+    Matx31d _rot;
+    Matx31d _t;
     Matx34d _P;
 };
 

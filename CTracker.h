@@ -19,7 +19,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  *******************************************************************************/
-
 #ifndef CTracker_hpp
 #define CTracker_hpp
 
@@ -40,54 +39,66 @@ public:
     CTracker();
     ~CTracker();
     
-    //triangulation
-    static void triangulatePoints(const Matx34d &P0, const Matx34d &P1, const Matx33d &K0, const Matx33d &K1, const vector<Point2d> &f0, const vector<Point2d> &f1, vector<Point3d> &outPts);
-    static void triangulatePoints(const Matx34d &P0, const Matx34d &P1, const Matx33d &K0, const Matx33d &K1, const vector<Point2f> &f0, const vector<Point2f> &f1, vector<Point3d> &outPts);
-    
-    //matrix decomposition
-    static bool RtFromEssentialMatrix(const Matx33d &E, const Matx33d &K, const vector<Point2d> &pts0, const vector<Point2d> &pts1, Matx33d &R, Vec3d &t);
-    static bool RtFromEssentialMatrix(const Matx33f &E, const Matx33f &K, const vector<Point2f> &pts0, const vector<Point2f> &pts1, Matx33d &R, Vec3d &t);
-    static bool RtFromHomographyMatrix(const Matx33f &H, const Matx33f &K, const vector<Point2f> &pts0, const vector<Point2f> &pts1, Matx33d &R, Vec3d &t);
-    
-    //projection errors
-    static double calculateFundamentalAvgError(const vector<Point2d> &pts0, const vector<Point2d> &pts1, const Matx33d &F);
-    static double calculateHomographyAvgError(const vector<Point2d> &pts0, const vector<Point2d> &pts1, const Matx33d &H);
-    static float calculateFundamentalAvgError(const vector<Point2f> &pts0, const vector<Point2f> &pts1, const Matx33f &F);
-    static float calculateHomographyAvgError(const vector<Point2f> &pts0, const vector<Point2f> &pts1, const Matx33f &H);
-    
-    //geometry operations
-    static double distancePointLine2D(const Point2d &pt, const Vec3d &l);
+
     
     //bundle adjustment
-    void bundleAdjustmentStructAndPose(const vector<Point2d> &observations, const vector<int> &camIdx, const vector<int> &pt3DIdx, const vector<Matx33d> &K);
-    void bundleAdjustmentPose();
-    void bundleAdjustmentStruct();
+    void bundleAdjustmentStructAndPose(const vector<Point2d> &observations, const vector<int> &camIdx, const vector<int> &pt3DIdx, const vector<Matx33d> &K, vector<double*> &R, vector<double*> &t, vector<double*> &pts3D, int isStructOrPose);
+    
+    enum BA_TYPE { STRUCT_ONLY = 0, POSE_ONLY = 1, STRUCT_AND_POSE = 2};
     
 private:
-    
-    static Point3d linearTriangulation(const Matx34d &P0, const Matx34d &P1, const Point3d pt0, const Point3d pt1, int iter = 10);
-    
-    
+
     
     //bundle adjustment structures
     struct BAStructAndPoseFunctor {
         
-        BAStructAndPoseFunctor(double observed_x, double observed_y, double fx, double fy, double s, double xc, double yc);
+        BAStructAndPoseFunctor(double pt2d_x, double pt2d_y, const double *k);
         
         template <typename T>
-        bool operator()(const T* const camera, const T* const point, T* residuals) const;
+        bool operator()(const T *const R, const T *const t, const T* const point, T* residuals) const;
         
-        static ceres::CostFunction* Create(const double observed_x,const double observed_y, const double fx, const double fy, const double s, const double xc, const double yc) {
-            return (new ceres::AutoDiffCostFunction<CTracker::BAStructAndPoseFunctor, 2, 6, 3>(new CTracker::BAStructAndPoseFunctor(observed_x, observed_y, fx, fy, s, xc, yc)));
+        static ceres::CostFunction* Create(const double pt2d_x,const double pt2d_y, const double *k) {
+            return (new ceres::AutoDiffCostFunction<CTracker::BAStructAndPoseFunctor, 2, 3, 3, 3>(new CTracker::BAStructAndPoseFunctor(pt2d_x, pt2d_y, k)));
         }
     
-        double _observed_x;
-        double _observed_y;
+        double _pt2d_x;
+        double _pt2d_y;
         //intrisic parameters
-        double _fx;
-        double _fy;
-        double _s;
-        double _xc;
-        double _yc;
+        const double *_k;
     };
+    
+    struct BAPoseFunctor{
+        BAPoseFunctor(double pt2d_x, double pt2d_y, const double *pt3d, const double *k);
+        
+        template <typename T>
+        bool operator()(const T *const R, const T *const t, T* residuals) const;
+        
+        static ceres::CostFunction* Create(const double pt2d_x,const double pt2d_y, const double *pt3d, const double *k) {
+            return (new ceres::AutoDiffCostFunction<CTracker::BAPoseFunctor, 2, 3, 3>(new CTracker::BAPoseFunctor(pt2d_x, pt2d_y, pt3d, k)));
+        }
+        
+        double _pt2d_x;
+        double _pt2d_y;
+        const double *_pt3d;
+        //intrisic parameters
+        const double *_k;
+    };
+    
+        struct BAStructFunctor{
+            BAStructFunctor(double pt2d_x, double pt2d_y, const double *R, const double *t, const double *k);
+            
+            template <typename T>
+            bool operator()(const T *const pt3d, T* residuals) const;
+            
+            static ceres::CostFunction* Create(const double pt2d_x,const double pt2d_y, const double *R, const double *t, const double *k) {
+                return (new ceres::AutoDiffCostFunction<CTracker::BAStructFunctor, 2, 3>(new CTracker::BAStructFunctor(pt2d_x, pt2d_y, R, t, k)));
+            }
+            
+            double _pt2d_x;
+            double _pt2d_y;
+            const double *_R;
+            const double *_t;
+            //intrisic parameters
+            const double *_k;
+        };
 };

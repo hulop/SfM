@@ -19,15 +19,14 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  *******************************************************************************/
-
 #include "CKeyFrame.h"
 
-CKeyFrame::CKeyFrame() {
+CKeyFrame::CKeyFrame(const Matx33d &K, const vector<double> &d, const Size &imSize):CFrame(K,d,imSize) {
     
     
 }
 
-CKeyFrame::CKeyFrame(cv::Mat frameIn):CFrame(frameIn) {
+CKeyFrame::CKeyFrame(const Mat &frameIn, const Matx33d &K, const vector<double> &d, const Size &imSize):CFrame(frameIn, K, d, imSize) {
     
     
 }

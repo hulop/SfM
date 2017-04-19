@@ -19,7 +19,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  *******************************************************************************/
-
 #ifndef CKeyFrame_hpp
 #define CKeyFrame_hpp
 #include "CFrame.h"
@@ -27,8 +26,8 @@
 
 class CKeyFrame : public CFrame {
 public:
-    CKeyFrame();
-    CKeyFrame(cv::Mat frameIn);
+    CKeyFrame(const Matx33d &K, const vector<double> &d, const Size &imSize);
+    CKeyFrame(const Mat &frameIn, const Matx33d &K, const vector<double> &d, const Size &imSize);
     CKeyFrame(CFrame frameIn);
     ~CKeyFrame();
     
