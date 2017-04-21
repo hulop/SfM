@@ -383,59 +383,97 @@ void CMap::removePoints(int threshold, vector<int> &ptsCullIdx, vector<int> &new
 }
 
 void CMap::removePoints(const vector<int> &ptsCullIdx, vector<int> &newPtsIdx) {
-
-    //find vector of indices to keep
-    vector<int> ptsKeepIdx(_pts3DIdx.size());
-    vector<int>::iterator ptsIdxIt = set_difference(_pts3DIdx.begin(), _pts3DIdx.end(), ptsCullIdx.begin(), ptsCullIdx.end(), ptsKeepIdx.begin());
-    ptsKeepIdx.resize(ptsIdxIt - ptsKeepIdx.begin());
     
-    //create vector mapping old indices to new ones
-    int count = 0;
-    for (int i = 0; i < _pts3DIdx.size(); i++) {
-        if(binary_search(ptsCullIdx.begin(), ptsCullIdx.end(), _pts3DIdx[i])) {
-            newPtsIdx.push_back(-1);
-        } else {
-            newPtsIdx.push_back(count);
+    size_t newSize = _pts3D.size() - ptsCullIdx.size();
+    vector<Matx31d> pts3D_t(newSize);
+    vector<Mat> descriptor_t(newSize);
+    vector<vector<int>> frameNo_t(newSize);
+    vector<vector<int>> pts2DIdx_t(newSize);
+    
+    size_t head = 0;
+    size_t tail;
+    size_t copied = 0;
+    for (int i = 0; i < ptsCullIdx.size(); i++) {
+        //find iterator of point to cull in point index array
+        vector<int>::iterator it = find(_pts3DIdx.begin() + head, _pts3DIdx.end(), ptsCullIdx[i]);
+        tail = it - _pts3DIdx.begin();
+        
+        if (tail != head) {
+            //copy all elements up to that point to the temporary vectors
+            swap_ranges(_pts3D.begin()+head,_pts3D.begin()+tail,pts3D_t.begin()+copied);
+            swap_ranges(_descriptor.begin()+head, _descriptor.begin()+tail, descriptor_t.begin()+copied);
+            swap_ranges(_frameNo.begin()+head, _frameNo.begin()+tail, frameNo_t.begin()+copied);
+            swap_ranges(_pts2DIdx.begin()+head, _pts2DIdx.begin()+tail, pts2DIdx_t.begin()+copied);
+        }
+        
+        int count = 0;
+        for (size_t j = tail; j < _pts3DIdx.size(); j++) {
+            int cullPt = ptsCullIdx[i + count];
+            int orgPt = _pts3DIdx[j];
+            if (cullPt != orgPt) {
+                break;
+            }
             count++;
         }
+        
+        head = tail + count;
+        copied = pts3D_t.size();
+        i += (count-1);
     }
-    
-    //create temporary copies of the vectors
-    vector<Matx31d> pts3D_t;
-    vector<Mat> descriptor_t;
-    vector<vector<int>> frameNo_t;
-    vector<vector<int>> pts2DIdx_t;
-    vector<int> pts3DIdx_t;
-    _lastPtNo = 0;
-    for (int i = 0; i < ptsKeepIdx.size(); i++) {
-        int idx = ptsKeepIdx[i];
-        pts3D_t.push_back(_pts3D[idx]);
-        descriptor_t.push_back(_descriptor[idx]);
-        pts3DIdx_t.push_back(i);
-        frameNo_t.push_back(_frameNo[idx]);
-        pts2DIdx_t.push_back(_pts2DIdx[idx]);
-        _lastPtNo++;
-    }
+    int pippo = 1;
 
-    //swap vectors
-    swap(_pts3D,pts3D_t);
-    swap(_descriptor, descriptor_t);
-    swap(_frameNo, frameNo_t);
-    swap(_pts2DIdx, pts2DIdx_t);
-    swap(_pts3DIdx, pts3DIdx_t);
-    
-    //rebuild covisibility graph
-    _frameViewsPointIdx.clear();
-    _pointInFrameIdx.clear();
-    _covisibilityGraph.clear();
-    _covisibilityFrameIdx.clear();
-    for (int i = 0; i < _pts3D.size(); i++) {
-        for (int j = 0; j < _frameNo[i].size(); j++) {
-            _pointInFrameIdx.emplace(_pts3DIdx[i],_frameNo[i][j]);
-            _frameViewsPointIdx.emplace(_frameNo[i][j],_pts3DIdx[i]);
-            for (int k = j+1; k < _frameNo[i].size(); k++) {
-                addCovisiblePoint(_frameNo[i][j], _frameNo[i][k]);
-            }
-        }
-    }
+//    //find vector of indices to keep
+//    vector<int> ptsKeepIdx(_pts3DIdx.size() - ptsCullIdx.size());
+//    vector<int>::iterator ptsIdxIt = set_difference(_pts3DIdx.begin(), _pts3DIdx.end(), ptsCullIdx.begin(), ptsCullIdx.end(), ptsKeepIdx.begin());
+//    
+//    //create vector mapping old indices to new ones
+//    int count = 0;
+//    for (int i = 0; i < _pts3DIdx.size(); i++) {
+//        if(binary_search(ptsCullIdx.begin(), ptsCullIdx.end(), _pts3DIdx[i])) {
+//            newPtsIdx.push_back(-1);
+//        } else {
+//            newPtsIdx.push_back(count);
+//            count++;
+//        }
+//    }
+//    
+//    //create temporary copies of the vectors
+//    vector<Matx31d> pts3D_t; pts3D_t.reserve(ptsKeepIdx.size());
+//    vector<Mat> descriptor_t; descriptor_t.reserve(ptsKeepIdx.size());
+//    vector<vector<int>> frameNo_t; frameNo_t.reserve(ptsKeepIdx.size());
+//    vector<vector<int>> pts2DIdx_t; pts2DIdx_t.reserve(ptsKeepIdx.size());
+//    vector<int> pts3DIdx_t;
+//    _lastPtNo = 0;
+//    for (int i = 0; i < ptsKeepIdx.size(); i++) {
+//        int idx = ptsKeepIdx[i];
+//        swap(pts3D_t[i],push_back(_pts3D[idx]));
+//        descriptor_t.push_back(_descriptor[idx]);
+//        pts3DIdx_t.push_back(i);
+//        
+//        swap(frameNo_t[i],_frameNo[idx]);
+//        swap(pts2DIdx_t[i],_pts2DIdx[idx]);
+//        _lastPtNo++;
+//    }
+//
+//    //swap vectors
+//    swap(_pts3D,pts3D_t);
+//    swap(_descriptor, descriptor_t);
+//    swap(_frameNo, frameNo_t);
+//    swap(_pts2DIdx, pts2DIdx_t);
+//    swap(_pts3DIdx, pts3DIdx_t);
+//    
+//    //rebuild covisibility graph
+//    _frameViewsPointIdx.clear();
+//    _pointInFrameIdx.clear();
+//    _covisibilityGraph.clear();
+//    _covisibilityFrameIdx.clear();
+//    for (int i = 0; i < _pts3D.size(); i++) {
+//        for (int j = 0; j < _frameNo[i].size(); j++) {
+//            _pointInFrameIdx.emplace(_pts3DIdx[i],_frameNo[i][j]);
+//            _frameViewsPointIdx.emplace(_frameNo[i][j],_pts3DIdx[i]);
+//            for (int k = j+1; k < _frameNo[i].size(); k++) {
+//                addCovisiblePoint(_frameNo[i][j], _frameNo[i][k]);
+//            }
+//        }
+//    }
 }

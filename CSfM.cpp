@@ -222,7 +222,11 @@ bool CSfM::mapping() {
     
     // ORBSLAM 6.B.
     // Recent map points culling
+    auto start = chrono::steady_clock::now();
     int cullCount = cullMapPoints();
+    auto finish = chrono::steady_clock::now();
+    auto diff = finish - start;
+    cout << chrono::duration_cast<chrono::milliseconds>(diff).count()<<" ns "<<endl;
     
 #ifdef DEBUGINFO
     cout << "(MAPPER) Culled " << cullCount << " map points" << endl;
@@ -1110,7 +1114,6 @@ bool CSfM::tracking() {
         Point3d centroid = _mapper.getCentroid();
         Mat dShow = Display2D::display3DProjections(_currFrame.getFrameGrey(), _currFrame.getIntrinsicUndistorted(), _currFrame.getRotation(), _currFrame.getTranslation(), allPts3D, 3, Scalar(0,0,255),1);
         dShow = Display2D::display3DProjections(dShow, _currFrame.getIntrinsicUndistorted(), _currFrame.getRotation(), _currFrame.getTranslation(), showPts3D, 3, Scalar(0,255,0));
-        _vOut << dShow;
         imshow("Debug",dShow);
         waitKey(1);
         

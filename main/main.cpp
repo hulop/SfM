@@ -63,7 +63,7 @@ int main(int argc, const char * argv[]) {
    // sfm.startVideoOutput("/Users/marco/Box Sync/Data/testVideos/tissuebox/reproj.avi",videoIn.get(CAP_PROP_FOURCC));
 
 #ifdef DEBUGINFO
-    sfm.startVideoOutput("/Users/marco/Box Sync/Data/testVideos/tissuebox/tracker.avi",videoIn.get(CAP_PROP_FOURCC),imSize);
+  //  sfm.startVideoOutput("/Users/marco/Box Sync/Data/testVideos/tissuebox/tracker.avi",videoIn.get(CAP_PROP_FOURCC),imSize);
 #endif
     
     //read loop
@@ -81,9 +81,9 @@ int main(int argc, const char * argv[]) {
         if (key != 255)
             break;
     }
-//sfm.stopVideoOutput();
+
 #ifdef DEBUGINFO
-    sfm.stopVideoOutput();
+   // sfm.stopVideoOutput();
 #endif
     
     //output 3d object

@@ -25,6 +25,7 @@
 
 #include <cmath>
 #include <thread>
+#include <chrono>
 #include "CKeyFrame.h"
 #include "CTracker.h"
 #include "CMap.h"
@@ -38,7 +39,7 @@
 using namespace cv;
 using namespace std;
 
-#define DEBUGINFO 1
+//#define DEBUGINFO 1
 #define NOT_INITIALIZED 0
 #define RUNNING 1
 #define LOST 2
