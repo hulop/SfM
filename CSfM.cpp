@@ -222,11 +222,7 @@ bool CSfM::mapping() {
     
     // ORBSLAM 6.B.
     // Recent map points culling
-    auto start = std::chrono::steady_clock::now();
     int cullCount = cullMapPoints();
-    auto finish = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed = finish - start;
-    cout << elapsed.count() << " ms" << endl;
     
 #ifdef DEBUGINFO
     cout << "(MAPPER) Culled " << cullCount << " map points" << endl;
@@ -239,6 +235,7 @@ bool CSfM::mapping() {
     
     // ORBSLAM 6.E.
     // Local KF culling
+    
     
     _keyFrameAdded = false;
     
@@ -413,7 +410,6 @@ bool CSfM::init() {
                         cout << "# Features triangulated in frame 0: " << _kFrames[0].getNMatchedPoints() << endl;
                         cout << "# Features triangulated in frame 1: " << _kFrames[1].getNMatchedPoints() << endl;
 #endif
-
                         
                         //change state
                         _minMatchDistance = 0;
@@ -1263,57 +1259,6 @@ int CSfM::cullMapPoints() {
     _prevFrame.cullPoints(newPtsIdx);
     _currFrame.cullPoints(newPtsIdx);
     
-//    //1. Each map point must be tracked in more than 25% of the frames in which it is predicted to be visible
-//    vector<Matx31d> pts3D;
-//    _mapper.getPoints(pts3D);
-//    vector<int> nHits(pts3D.size(),0);
-//    vector<int> nMisses(pts3D.size(),0);
-//    vector<Point2d> pts2D; pts2D.reserve(pts3D.size());
-//    for (int i = 0; i < _kFrames.size(); i++) {
-//        Size imSize = _kFrames[i].getImageSize();
-//        GeometryUtils::projectPoints(_kFrames[i].getProjectionMatrix(), _kFrames[i].getIntrinsicUndistorted(), pts3D, pts2D);
-//        
-//        //get list of matched points
-//        vector<int> matchedPtsIdx;
-//        _mapper.getPointsInFrame(matchedPtsIdx, _kFrames[i].getFrameNo());
-//        sort(matchedPtsIdx.begin(),matchedPtsIdx.end()); //sort just in case
-//        
-//        //check how many that should be visible are matched
-//        for (int j = 0; j < pts2D.size(); j++) {
-//            if ((pts2D[j].x >= 0) && (pts2D[j].x < imSize.width) && (pts2D[j].y >= 0) && (pts2D[j].y < imSize.height)) {
-//                
-//                if(binary_search(matchedPtsIdx.begin(),matchedPtsIdx.end(),j))
-//                    nHits[j]++;
-//                else
-//                    nMisses[j]++;
-//            }
-//        }
-//        
-//        pts2D.clear();
-//    }
-//    
-//    //find all elements with tracking rate lower than the threshold
-//    vector<int> cullIdx;
-//    cullIdx.reserve(pts3D.size());
-//    for (int i = 0; i < nHits.size(); i++) {
-//        double rate = nHits[i]/(double)(nHits[i] + nMisses[i]);
-//        if (rate <= thresholdRate) {
-//            cullIdx.push_back(i);
-//        }
-//    }
-//    
-//    if (cullIdx.size() > 0) {
-//        //remove from map
-//        vector<int> newPtsIdx;
-//        sort(cullIdx.begin(),cullIdx.end());
-//        _mapper.removePoints(cullIdx,newPtsIdx);
-//    
-//        //remove from frames
-//        for (int i = 0; i < _kFrames.size(); i++) {
-//            _kFrames[i].cullPoints(newPtsIdx);
-//        }
-//    }
-    
     return cullIdx.size();
 }
 
@@ -1328,7 +1273,6 @@ int CSfM::cullKeyFrames(double thresholdRate) {
                 continue;
             
         }
-        
         
     }
     
