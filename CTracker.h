@@ -42,7 +42,7 @@ public:
 
     
     //bundle adjustment
-    void bundleAdjustmentStructAndPose(const vector<Point2d> &observations, const vector<int> &camIdx, const vector<int> &pt3DIdx, const vector<Matx33d> &K, vector<double*> &R, vector<double*> &t, vector<double*> &pts3D, int isStructOrPose);
+    void bundleAdjustmentStructAndPose(const vector<Point2d> &observations, const vector<int> &camIdx, const vector<Matx33d> &K, vector<double*> &R, vector<double*> &t, vector<double*> &pts3D, int isStructOrPose);
     
     enum BA_TYPE { STRUCT_ONLY = 0, POSE_ONLY = 1, STRUCT_AND_POSE = 2};
     

@@ -427,7 +427,6 @@ void CFrame::cullPoints(const vector<int> &pts3DIdx) {
             //check the new index
             if (pts3DIdx[idx] == -1)
                 _status[i] = 0;
-            _pts3DIdx[i] = pts3DIdx[idx];
         }
     }
     _nMatched = sum(_status)[0];

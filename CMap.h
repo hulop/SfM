@@ -50,6 +50,7 @@ public:
     void getPointsInFrame(vector<int> &pts3DIdx, const int frameNo);
     void getPointsInFrame(vector<Matx31d> &pts3D, vector<int> &pts3DIdx, vector<int> &pts2DIdx, const int frameNo);
     void getPointsInFrame_Mutable(vector<double*> &pts3D, vector<int> &pts3DIdx, vector<int> &pts2DIdx, const int frameNo);
+    void getPointsInFrame_Mutable(vector<double*> &pts3D, vector<int> &pts2DIdx, const int frameNo);
     void getPointsInFrame(vector<int> &pts3DIdx, vector<int> &pts2DIdx, const int frameNo);
     void getPointsInFrames(vector<Matx31d> &pts3D, vector<int> &pts3DIdx, const vector<int> &frameNo);
     void getPointsInFrames(vector<int> &pts3DIdx, const vector<int> &frameNo);
@@ -57,7 +58,6 @@ public:
     void getPoints_Mutable(vector<double*> &pts3D);
     void getPoints(vector<Matx31d> &pts3D);
     void getFramesConnectedToFrame(int frameNo, vector<int> &covisibleFrames, int threshold = 0);
-    void findNearestNeighbours(const vector<Matx31d> &pts3D, vector<int> &orgPtsIdx, vector<double> &dist);
     void getRepresentativeDescriptors(const vector<int> &pts3DIdx, Mat &descriptors);
     
     int getNPoints();

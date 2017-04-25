@@ -222,11 +222,11 @@ bool CSfM::mapping() {
     
     // ORBSLAM 6.B.
     // Recent map points culling
-    auto start = chrono::steady_clock::now();
+    auto start = std::chrono::steady_clock::now();
     int cullCount = cullMapPoints();
-    auto finish = chrono::steady_clock::now();
-    auto diff = finish - start;
-    cout << chrono::duration_cast<chrono::milliseconds>(diff).count()<<" ns "<<endl;
+    auto finish = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed = finish - start;
+    cout << elapsed.count() << " ms" << endl;
     
 #ifdef DEBUGINFO
     cout << "(MAPPER) Culled " << cullCount << " map points" << endl;
@@ -445,11 +445,11 @@ void CSfM::bundleAdjustment(const vector<int> &frameIdx, int isStructAndPose) {
     vector<double*> t;
     vector<double*> pts3d;
     vector<Point2d> pts2d;
-    vector<int> pts3dIdx;
     vector<int> camIdx;
     vector<Matx33d> K;
     
-    _mapper.getPoints_Mutable(pts3d);
+    vector<int> org3dIdx;
+    
     for (int i = 0; i < frameIdx.size(); i++) {
         vector<int> pts2dIdx;
         int currIdx = frameIdx[i];
@@ -460,18 +460,19 @@ void CSfM::bundleAdjustment(const vector<int> &frameIdx, int isStructAndPose) {
         t.push_back(_kFrames[kFrameIdx].getTranslation_Mutable());
         R.push_back(_kFrames[kFrameIdx].getRotationRodrigues_Mutable());
         //get the 3d points
-        _mapper.getPointsInFrame(pts3dIdx, pts2dIdx, currIdx);
+        _mapper.getPointsInFrame_Mutable(pts3d, pts2dIdx, currIdx);
+        
         //get the corresponding 2d points
         _kFrames[kFrameIdx].getPointsAt(pts2dIdx, pts2d);
         //get camera indices for the points added
         int prevSize = camIdx.size();
-        for (int j = 0; j < pts3dIdx.size() - prevSize; j++) {
+        for (int j = 0; j < pts3d.size() - prevSize; j++) {
             camIdx.push_back(i);
         }
     }
     
     //run bundle adjustment
-    _tracker.bundleAdjustmentStructAndPose(pts2d, camIdx, pts3dIdx, K, R, t, pts3d, isStructAndPose);
+    _tracker.bundleAdjustmentStructAndPose(pts2d, camIdx, K, R, t, pts3d, isStructAndPose);
     
     //update projection matrices
     for (int i = 0; i < frameIdx.size(); i++) {
@@ -1114,6 +1115,7 @@ bool CSfM::tracking() {
         Point3d centroid = _mapper.getCentroid();
         Mat dShow = Display2D::display3DProjections(_currFrame.getFrameGrey(), _currFrame.getIntrinsicUndistorted(), _currFrame.getRotation(), _currFrame.getTranslation(), allPts3D, 3, Scalar(0,0,255),1);
         dShow = Display2D::display3DProjections(dShow, _currFrame.getIntrinsicUndistorted(), _currFrame.getRotation(), _currFrame.getTranslation(), showPts3D, 3, Scalar(0,255,0));
+        //_vOut << dShow;
         imshow("Debug",dShow);
         waitKey(1);
         

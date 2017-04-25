@@ -132,7 +132,7 @@ template <typename T> bool CTracker::BAStructFunctor::operator()(const T *const 
     return true;
 }
 
-void CTracker::bundleAdjustmentStructAndPose(const vector<Point2d> &observations, const vector<int> &camIdx, const vector<int> &pt3DIdx, const vector<Matx33d> &K, vector<double*> &R, vector<double*> &t, vector<double*> &pts3D, int isStructOrPose) {
+void CTracker::bundleAdjustmentStructAndPose(const vector<Point2d> &observations, const vector<int> &camIdx, const vector<Matx33d> &K, vector<double*> &R, vector<double*> &t, vector<double*> &pts3D, int isStructOrPose) {
     //create ceres problem
     ceres::Problem prob;
     
@@ -140,27 +140,25 @@ void CTracker::bundleAdjustmentStructAndPose(const vector<Point2d> &observations
     ceres::CostFunction* cost_function;
     for (int i = 0; i < observations.size(); i++) {
         int camNo = camIdx[i];
-        int ptNo = pt3DIdx[i];
-        
         
         switch (isStructOrPose) {
             case 0:
                 cost_function = CTracker::BAStructFunctor::Create(observations[i].x, observations[i].y, R[camNo], t[camNo], K[camNo].val);
-                prob.AddResidualBlock(cost_function, NULL, pts3D[ptNo]);
+                prob.AddResidualBlock(cost_function, NULL, pts3D[i]);
                 break;
             case 1:
-                cost_function = CTracker::BAPoseFunctor::Create(observations[i].x, observations[i].y, pts3D[ptNo], K[camNo].val);
+                cost_function = CTracker::BAPoseFunctor::Create(observations[i].x, observations[i].y, pts3D[i], K[camNo].val);
                 prob.AddResidualBlock(cost_function, NULL, R[camNo], t[camNo]);
                 break;
             case 2:
                 cost_function = CTracker::BAStructAndPoseFunctor::Create(observations[i].x, observations[i].y, K[camNo].val);
-                prob.AddResidualBlock(cost_function, NULL, R[camNo], t[camNo], pts3D[ptNo]);
+                prob.AddResidualBlock(cost_function, NULL, R[camNo], t[camNo], pts3D[i]);
                 break;
             default:
                 break;
         }
         
-            }
+    }
     
     
     //create solution options
@@ -173,5 +171,3 @@ void CTracker::bundleAdjustmentStructAndPose(const vector<Point2d> &observations
     ceres::Solver::Summary summ;
     ceres::Solve(opts, &prob, &summ);
 }
-
-

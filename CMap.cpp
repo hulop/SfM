@@ -35,7 +35,7 @@ CMap::~CMap() {
 void CMap::addNewPoints(const vector<Matx31d> &pts3D, const vector<vector<int> > &pts2DIdx, const vector<int> &frameNo, vector<int> &pts3DIdx) {
     
     const int oldCount = _lastPtNo;
-    
+    pts3DIdx.reserve(pts3D.size());
     for (int i = 0; i < pts3D.size(); i++) {
         _pts3D.push_back(pts3D[i]);
         _pts3DIdx.push_back(_lastPtNo);
@@ -50,6 +50,7 @@ void CMap::addNewPoints(const vector<Matx31d> &pts3D, const vector<vector<int> >
             _pointInFrameIdx.emplace(_lastPtNo,frameNo[j]);
             _frameViewsPointIdx.emplace(frameNo[j],_lastPtNo);
         }
+        pts3DIdx.push_back(_lastPtNo);
         _lastPtNo++;
     }
     
@@ -60,9 +61,6 @@ void CMap::addNewPoints(const vector<Matx31d> &pts3D, const vector<vector<int> >
         }
     }
     
-    vector<int>::const_iterator first = _pts3DIdx.begin() + oldCount;
-    vector<int>::const_iterator last = _pts3DIdx.end();
-    pts3DIdx = vector<int>(first,last);
 }
 
 void CMap::addCovisiblePoint(int idx0, int idx1, int increment) {
@@ -100,7 +98,7 @@ void CMap::addCovisiblePoint(int idx0, int idx1, int increment) {
 }
 
 int CMap::getNPoints() {
-    return _pts3D.size();
+    return _pts3DIdx.size();
 }
 
 void CMap::addPointMatches(const vector<int> &pts3DIdx, const vector<int> &pts2DIdx, const int frameNo) {
@@ -116,27 +114,6 @@ void CMap::addPointMatches(const vector<int> &pts3DIdx, const vector<int> &pts2D
         for (int j = 0; j < _frameNo[idx].size()-1; j++)
             addCovisiblePoint(frameNo, _frameNo[idx][j], 1);
     }
-}
-
-
-int CMap::countMatchesBetweenFrames(int f0, int f1) {
-    //count number of 3d points observed in frames f0 and f1
-    int commonPts = 0;
-    for (int i = 0; i < _pts3D.size(); i++) {
-        bool found0 = false, found1 = false;
-        for (int j = 0; j < _frameNo[i].size(); i++) {
-            if (_frameNo[i][j] == f0)
-                found0 = true;
-            else if (_frameNo[i][j] == f1)
-                found1 = true;
-        
-            if (found0 && found1) {
-                commonPts++;
-                break;
-            }
-        }
-    }
-    return commonPts;
 }
 
 void CMap::getPointsAtIdx(const vector<int> &pts3DIdx, vector<Matx31d> &pts3D) {
@@ -200,6 +177,22 @@ void CMap::getPointsInFrame_Mutable(vector<double *> &pts3D, vector<int> &pts3DI
     }
 }
 
+void CMap::getPointsInFrame_Mutable(vector<double *> &pts3D, vector<int> &pts2DIdx, const int frameNo) {
+    
+    auto range = _frameViewsPointIdx.equal_range(frameNo);
+    if ((range.first != _frameViewsPointIdx.end()) && (range.second != range.first)) {
+        for (auto it = range.first; it != range.second; ++it) {
+            int ptIdx = it->second;
+            pts3D.push_back(_pts3D[ptIdx].val);
+            for (int i = 0; i < _frameNo[ptIdx].size(); i++) {
+                if (_frameNo[ptIdx][i] == frameNo) {
+                    pts2DIdx.push_back(_pts2DIdx[ptIdx][i]);
+                }
+            }
+        }
+    }
+}
+
 void CMap::getPointsInFrame(vector<int> &pts3DIdx, vector<int> &pts2DIdx, const int frameNo) {
     auto range = _frameViewsPointIdx.equal_range(frameNo);
     if ((range.first != _frameViewsPointIdx.end()) && (range.second != range.first)) {
@@ -234,7 +227,8 @@ void CMap::getPointsInFrames(vector<Matx31d> &pts3D, vector<int> &pts3DIdx, cons
     //copy 3d points
     pts3D.reserve(pts3DIdx.size());
     for (int i = 0; i < pts3DIdx.size(); i++) {
-        pts3D.push_back(pts3D[i]);
+        int idx = pts3DIdx[i];
+        pts3D.push_back(pts3D[idx]);
     }
 }
 
@@ -257,12 +251,19 @@ void CMap::getPointsInFrames(vector<int> &pts3DIdx, const vector<int> &frameNo) 
 
 
 void CMap::getPoints(vector<Matx31d> &pts3D) {
-    pts3D = _pts3D;
+    pts3D.reserve(_pts3DIdx.size());
+    for (int i = 0; i < _pts3DIdx.size(); i++) {
+        int idx = _pts3DIdx[i];
+        pts3D.push_back(_pts3D[idx]);
+    }
+   
 }
 
 void CMap::getPoints_Mutable(vector<double*> &pts3D) {
-    for (int i = 0; i < _pts3D.size(); i++)
-        pts3D.push_back(_pts3D[i].val);
+    for (int i = 0; i < _pts3DIdx.size(); i++) {
+        int idx = _pts3DIdx[i];
+        pts3D.push_back(_pts3D[idx].val);
+    }
 }
 
 
@@ -283,14 +284,15 @@ void CMap::addDescriptors(const vector<int> &pts3DIdx, const cv::Mat &descriptor
 
 void CMap::updateCentroid() {
     vector<float> x, y, z;
-    x.reserve(_pts3D.size());
-    y.reserve(_pts3D.size());
-    z.reserve(_pts3D.size());
+    x.reserve(_pts3DIdx.size());
+    y.reserve(_pts3DIdx.size());
+    z.reserve(_pts3DIdx.size());
     
-    for (int i = 0; i < _pts3D.size(); i++) {
-        x.push_back(_pts3D[i].val[0]);
-        y.push_back(_pts3D[i].val[1]);
-        z.push_back(_pts3D[i].val[2]);
+    for (int i = 0; i < _pts3DIdx.size(); i++) {
+        int idx = _pts3DIdx[i];
+        x.push_back(_pts3D[idx].val[0]);
+        y.push_back(_pts3D[idx].val[1]);
+        z.push_back(_pts3D[idx].val[2]);
     }
     
     sort(x.begin(),x.end());
@@ -313,13 +315,6 @@ void CMap::getFramesConnectedToFrame(int frameNo, vector<int> &covisibleFrames, 
         if (linkStrength > threshold)
             covisibleFrames.push_back(it->second);
     }
-}
-
-//find nearest neighbours of a list of 3d points, returns indices and euclidean distance from the original points
-void CMap::findNearestNeighbours(const vector<Matx31d> &pts3D, vector<int> &orgPtsIdx, vector<double> &dist) {
-    
-    
-    
 }
 
 
@@ -382,98 +377,73 @@ void CMap::removePoints(int threshold, vector<int> &ptsCullIdx, vector<int> &new
     removePoints(ptsCullIdx, newPtsIdx);
 }
 
-void CMap::removePoints(const vector<int> &ptsCullIdx, vector<int> &newPtsIdx) {
+void CMap::removePoints(const vector<int> &ptsCullIdx, vector<int> &ptsStatusFlag) {
     
-    size_t newSize = _pts3D.size() - ptsCullIdx.size();
-    vector<Matx31d> pts3D_t(newSize);
-    vector<Mat> descriptor_t(newSize);
-    vector<vector<int>> frameNo_t(newSize);
-    vector<vector<int>> pts2DIdx_t(newSize);
+    //get points to keep
+    vector<int> ptsToKeep(_pts3DIdx.size());
+    vector<int>::iterator it = set_difference(_pts3DIdx.begin(), _pts3DIdx.end(), ptsCullIdx.begin(), ptsCullIdx.end(), ptsToKeep.begin());
+    ptsToKeep.resize(it - ptsToKeep.begin());
+    swap(_pts3DIdx, ptsToKeep);
     
-    size_t head = 0;
-    size_t tail;
-    size_t copied = 0;
+    //remove from graphs
     for (int i = 0; i < ptsCullIdx.size(); i++) {
-        //find iterator of point to cull in point index array
-        vector<int>::iterator it = find(_pts3DIdx.begin() + head, _pts3DIdx.end(), ptsCullIdx[i]);
-        tail = it - _pts3DIdx.begin();
-        
-        if (tail != head) {
-            //copy all elements up to that point to the temporary vectors
-            swap_ranges(_pts3D.begin()+head,_pts3D.begin()+tail,pts3D_t.begin()+copied);
-            swap_ranges(_descriptor.begin()+head, _descriptor.begin()+tail, descriptor_t.begin()+copied);
-            swap_ranges(_frameNo.begin()+head, _frameNo.begin()+tail, frameNo_t.begin()+copied);
-            swap_ranges(_pts2DIdx.begin()+head, _pts2DIdx.begin()+tail, pts2DIdx_t.begin()+copied);
-        }
-        
-        int count = 0;
-        for (size_t j = tail; j < _pts3DIdx.size(); j++) {
-            int cullPt = ptsCullIdx[i + count];
-            int orgPt = _pts3DIdx[j];
-            if (cullPt != orgPt) {
-                break;
+        pair<unordered_multimap<int,int>::iterator,unordered_multimap<int,int>::iterator> affectedFrames = _pointInFrameIdx.equal_range(ptsCullIdx[i]);
+        unordered_multimap<int,int>::iterator begFrame = affectedFrames.first;
+        unordered_multimap<int,int>::iterator endFrame = affectedFrames.second;
+        if ((begFrame != _pointInFrameIdx.end()) && (endFrame != begFrame)) {
+            
+            for (unordered_multimap<int,int>::iterator it_out = begFrame; it_out != endFrame; ++it_out) {
+                int idx0 = it_out->second;
+                //remove point from frame views
+                auto range  = _frameViewsPointIdx.equal_range(idx0);
+                for (auto it = range.first; it != range.second; ++it) {
+                    if (it->second == ptsCullIdx[i]) {
+                        _frameViewsPointIdx.erase(it);
+                        break;
+                    }
+                }
+                
+                unordered_multimap<int,int>::iterator it_copy = it_out;
+                for (unordered_multimap<int,int>::iterator it_in = ++it_copy; it_in != endFrame; ++it_in) {
+                    
+                    //update covisibility graph
+                    int idx1 = it_in->second;
+                    tuple<int,int> key0(idx0,idx1);
+                    tuple<int,int> key1(idx1,idx0);
+                    _covisibilityGraph[key0]+= -1;
+                    _covisibilityGraph[key1]+= -1;
+                    
+                    //if link strength goes to zero, remove link
+                    if (_covisibilityGraph[key0] == 0) {
+                        auto range = _covisibilityFrameIdx.equal_range(idx0);
+                        for (auto it = range.first; it != range.second; ++it) {
+                            if (it->second == idx1) {
+                                _covisibilityFrameIdx.erase(it);
+                                break;
+                            }
+                        }
+                        range = _covisibilityFrameIdx.equal_range(idx1);
+                        for (auto it = range.first; it != range.second; ++it) {
+                            if (it->second == idx0) {
+                                _covisibilityFrameIdx.erase(it);
+                                break;
+                            }
+                        }
+                        _covisibilityGraph.erase(key0);
+                        _covisibilityGraph.erase(key1);
+                    }
+                }
             }
-            count++;
+            
+            //remove point
+            _pointInFrameIdx.erase(ptsCullIdx[i]);
         }
-        
-        head = tail + count;
-        copied = pts3D_t.size();
-        i += (count-1);
     }
-    int pippo = 1;
-
-//    //find vector of indices to keep
-//    vector<int> ptsKeepIdx(_pts3DIdx.size() - ptsCullIdx.size());
-//    vector<int>::iterator ptsIdxIt = set_difference(_pts3DIdx.begin(), _pts3DIdx.end(), ptsCullIdx.begin(), ptsCullIdx.end(), ptsKeepIdx.begin());
-//    
-//    //create vector mapping old indices to new ones
-//    int count = 0;
-//    for (int i = 0; i < _pts3DIdx.size(); i++) {
-//        if(binary_search(ptsCullIdx.begin(), ptsCullIdx.end(), _pts3DIdx[i])) {
-//            newPtsIdx.push_back(-1);
-//        } else {
-//            newPtsIdx.push_back(count);
-//            count++;
-//        }
-//    }
-//    
-//    //create temporary copies of the vectors
-//    vector<Matx31d> pts3D_t; pts3D_t.reserve(ptsKeepIdx.size());
-//    vector<Mat> descriptor_t; descriptor_t.reserve(ptsKeepIdx.size());
-//    vector<vector<int>> frameNo_t; frameNo_t.reserve(ptsKeepIdx.size());
-//    vector<vector<int>> pts2DIdx_t; pts2DIdx_t.reserve(ptsKeepIdx.size());
-//    vector<int> pts3DIdx_t;
-//    _lastPtNo = 0;
-//    for (int i = 0; i < ptsKeepIdx.size(); i++) {
-//        int idx = ptsKeepIdx[i];
-//        swap(pts3D_t[i],push_back(_pts3D[idx]));
-//        descriptor_t.push_back(_descriptor[idx]);
-//        pts3DIdx_t.push_back(i);
-//        
-//        swap(frameNo_t[i],_frameNo[idx]);
-//        swap(pts2DIdx_t[i],_pts2DIdx[idx]);
-//        _lastPtNo++;
-//    }
-//
-//    //swap vectors
-//    swap(_pts3D,pts3D_t);
-//    swap(_descriptor, descriptor_t);
-//    swap(_frameNo, frameNo_t);
-//    swap(_pts2DIdx, pts2DIdx_t);
-//    swap(_pts3DIdx, pts3DIdx_t);
-//    
-//    //rebuild covisibility graph
-//    _frameViewsPointIdx.clear();
-//    _pointInFrameIdx.clear();
-//    _covisibilityGraph.clear();
-//    _covisibilityFrameIdx.clear();
-//    for (int i = 0; i < _pts3D.size(); i++) {
-//        for (int j = 0; j < _frameNo[i].size(); j++) {
-//            _pointInFrameIdx.emplace(_pts3DIdx[i],_frameNo[i][j]);
-//            _frameViewsPointIdx.emplace(_frameNo[i][j],_pts3DIdx[i]);
-//            for (int k = j+1; k < _frameNo[i].size(); k++) {
-//                addCovisiblePoint(_frameNo[i][j], _frameNo[i][k]);
-//            }
-//        }
-//    }
+    
+    //prepare map flagging points to remove
+    ptsStatusFlag.resize(_pts3D.size());
+    for (int i = 0; i < ptsCullIdx.size(); i++) {
+        ptsStatusFlag[ptsCullIdx[i]] = -1;
+    }
 }
+
