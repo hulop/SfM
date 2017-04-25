@@ -447,3 +447,69 @@ void CMap::removePoints(const vector<int> &ptsCullIdx, vector<int> &ptsStatusFla
     }
 }
 
+int CMap::getPointFrameVisibility(const int pt3DIdx) {
+    int nFrameVisible = 0;
+    nFrameVisible = _pointInFrameIdx.count(pt3DIdx);
+    
+    return nFrameVisible;
+}
+
+void CMap::removeFrame(const int frameNo) {
+    
+    //get points affected
+    pair<unordered_multimap<int,int>::iterator,unordered_multimap<int,int>::iterator> range = _frameViewsPointIdx.equal_range(frameNo);
+    
+    if ((range.first != _frameViewsPointIdx.end()) && (range.first != range.second)) {
+        //for all points, remove from vectors
+        for (auto it = range.first; it != range.second; ++it) {
+            //get position
+            int ptIdx = it->second;
+            vector<int>::iterator vectIt = find(_frameNo[ptIdx].begin(), _frameNo[ptIdx].end(), frameNo);
+            int pos = vectIt - _frameNo[ptIdx].begin();
+            
+            //remove from vectors
+            _frameNo[ptIdx].erase(vectIt);
+            _pts2DIdx[ptIdx].erase(_pts2DIdx[ptIdx].begin() + pos);
+            Mat newDesc(_descriptor[ptIdx].rows -1 , _descriptor[ptIdx].cols, _descriptor[ptIdx].type());
+            Size dSize = newDesc.size();
+            if (pos > 0) {
+                Rect roi(0,0,dSize.width,pos);
+                _descriptor[ptIdx](roi).copyTo(newDesc(roi));
+            }
+            if (pos < (dSize.height - 1)) {
+                Rect roiFrom(0,pos+1,dSize.width,dSize.height-pos-1);
+                Rect roiTo(0, pos, dSize.width, dSize.height-pos-1);
+                _descriptor[ptIdx](roiFrom).copyTo(newDesc(roiTo));
+            }
+            _descriptor[ptIdx] = newDesc;
+            
+            //remove frame from list associated to point
+            pair<unordered_multimap<int,int>::iterator, unordered_multimap<int,int>::iterator> frameRange = _pointInFrameIdx.equal_range(ptIdx);
+            for (auto itFrame = frameRange.first; itFrame != frameRange.second; ++itFrame) {
+                int fIdx = itFrame->second;
+                if (fIdx == frameNo) {
+                    _pointInFrameIdx.erase(itFrame);
+                    break;
+                }
+            }
+        }
+    }
+    
+    //remove from graphs
+    _frameViewsPointIdx.erase(frameNo);
+    pair<unordered_multimap<int,int>::iterator,unordered_multimap<int,int>::iterator> affectedFrames = _covisibilityFrameIdx.equal_range(frameNo);
+    for (auto it = affectedFrames.first; it != affectedFrames.second; ++it) {
+        pair<unordered_multimap<int,int>::iterator,unordered_multimap<int,int>::iterator> singleFrame = _covisibilityFrameIdx.equal_range(it->second);
+        for (auto it2 = singleFrame.first; it2 != singleFrame.second; ++it2) {
+            if (it2->second == frameNo) {
+                _covisibilityFrameIdx.erase(it2);
+                break;
+            }
+        }
+        tuple<int,int> key0(frameNo,it->second);
+        tuple<int,int> key1(it->second,frameNo);
+        _covisibilityGraph.erase(key0);
+        _covisibilityGraph.erase(key1);
+    }
+    _covisibilityFrameIdx.erase(frameNo);
+}

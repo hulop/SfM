@@ -222,10 +222,10 @@ bool CSfM::mapping() {
     
     // ORBSLAM 6.B.
     // Recent map points culling
-    int cullCount = cullMapPoints();
+    int cullMapCount = cullMapPoints();
     
 #ifdef DEBUGINFO
-    cout << "(MAPPER) Culled " << cullCount << " map points" << endl;
+    cout << "(MAPPER) Culled " << cullMapCount << " map points" << endl;
 #endif
     
     // ORBSLAM 6.D.
@@ -235,7 +235,10 @@ bool CSfM::mapping() {
     
     // ORBSLAM 6.E.
     // Local KF culling
-    
+    int cullFrameCount = cullKeyFrames();
+#ifdef DEBUGINFO
+    cout << "(MAPPER Culled " << cullFrameCount << " key frames" << endl;
+#endif
     
     _keyFrameAdded = false;
     
@@ -1264,18 +1267,43 @@ int CSfM::cullMapPoints() {
 
 int CSfM::cullKeyFrames(double thresholdRate) {
     
-    //find frames that have at least a thresholdRate% overlap in matched features with other frames
-    int kIdx = 0;
-    while(true) {
+    //find frames that have at least a thresholdRate% overlap in matched features with _minVisibilityFrameNo other frames
+    int culledFrameNo = 0;
+    
+    //greedy approach, start from the oldest keyframe
+    int kfIdx = 0;
+    while (kfIdx < _kFrames.size()) {
+        //get all the points found in current keyframe
+        vector<int> pts3DIdx;
+        _kFrames[kfIdx].getMatchedPoints(pts3DIdx);
+        int frameNo = _kFrames[kfIdx].getFrameNo();
         
-        for (int i = 0; i < _kFrames.size(); i++) {
-            if (i == kIdx)
-                continue;
-            
+        //check if these points have been matched by at least _minVisibilityFrameNo other keyframes
+        int count = 0;
+        for (int j = 0; j < pts3DIdx.size(); j++) {
+            int visibilityFrameNo = _mapper.getPointFrameVisibility(pts3DIdx[j]);
+            if (visibilityFrameNo > _minVisibilityFrameNo)
+                count++;
         }
         
+        //if the number of visible points is larger than thresholdRate, cull the frame
+        double rate = (double)count/pts3DIdx.size();
+        if (rate > thresholdRate) {
+            //remove frame references from the map
+            _mapper.removeFrame(frameNo);
+            
+            //remove from list of keyframes
+            _kFrames.erase(_kFrames.begin() + kfIdx);
+            
+            culledFrameNo++;
+        } else {
+            //advance counter
+            kfIdx++;
+        }
     }
     
+    
+    return culledFrameNo;
 }
 
 void CSfM::updateMapAndFrame(int frameNo, const vector<int> &pts3DIdx, const vector<int> &pts2DIdx) {

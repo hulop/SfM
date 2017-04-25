@@ -44,6 +44,8 @@ public:
     
     void removePoints(const vector<int> &ptsCullIdx, vector<int> &newPtsIdx);
     void removePoints(int threshold, vector<int> &ptsCullIdx, vector<int> &newPtsIdx);
+    void removeFrame(const int frameNo);
+    
     
     void getPointsAtIdx(const vector<int> &pts3DIdx, vector<Matx31d> &pts3D);
     void getPointsInFrame(vector<Matx31d> &pts3D, vector<int> &pts2DIdx, const int frameNo);
@@ -59,6 +61,8 @@ public:
     void getPoints(vector<Matx31d> &pts3D);
     void getFramesConnectedToFrame(int frameNo, vector<int> &covisibleFrames, int threshold = 0);
     void getRepresentativeDescriptors(const vector<int> &pts3DIdx, Mat &descriptors);
+    
+    int getPointFrameVisibility(const int pt3DIdx);
     
     int getNPoints();
     
