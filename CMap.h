@@ -44,8 +44,9 @@ public:
     
     void removePoints(const vector<int> &ptsCullIdx, vector<int> &newPtsIdx);
     void removePoints(int threshold, vector<int> &ptsCullIdx, vector<int> &newPtsIdx);
-    void removeFrame(const int frameNo);
+    void removeFrame(const int frameNo, const vector<int> &framePtsIdx);
     
+    bool arePointsSeenByAtLeast(const vector<int> &pts3DIdx, const int nFramesThreshold, const double ratioPtsThreshold);
     
     void getPointsAtIdx(const vector<int> &pts3DIdx, vector<Matx31d> &pts3D);
     void getPointsInFrame(vector<Matx31d> &pts3D, vector<int> &pts2DIdx, const int frameNo);

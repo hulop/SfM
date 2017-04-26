@@ -368,9 +368,10 @@ void CMap::getRepresentativeDescriptors(const vector<int> &pts3DIdx, Mat &descri
 
 void CMap::removePoints(int threshold, vector<int> &ptsCullIdx, vector<int> &newPtsIdx) {
     //find points seen by less than threshold frames
-    for (int i = 0; i < _frameNo.size(); i++) {
-        if (_frameNo[i].size() < threshold) {
-            ptsCullIdx.push_back(i);
+    for (int i = 0; i < _pts3DIdx.size(); i++) {
+        int idx = _pts3DIdx[i];
+        if (_frameNo[idx].size() < threshold) {
+            ptsCullIdx.push_back(idx);
         }
     }
     sort(ptsCullIdx.begin(),ptsCullIdx.end());
@@ -454,43 +455,40 @@ int CMap::getPointFrameVisibility(const int pt3DIdx) {
     return nFrameVisible;
 }
 
-void CMap::removeFrame(const int frameNo) {
+void CMap::removeFrame(const int frameNo, const vector<int> &framePtsIdx) {
     
-    //get points affected
-    pair<unordered_multimap<int,int>::iterator,unordered_multimap<int,int>::iterator> range = _frameViewsPointIdx.equal_range(frameNo);
-    
-    if ((range.first != _frameViewsPointIdx.end()) && (range.first != range.second)) {
-        //for all points, remove from vectors
-        for (auto it = range.first; it != range.second; ++it) {
-            //get position
-            int ptIdx = it->second;
-            vector<int>::iterator vectIt = find(_frameNo[ptIdx].begin(), _frameNo[ptIdx].end(), frameNo);
-            int pos = vectIt - _frameNo[ptIdx].begin();
-            
-            //remove from vectors
-            _frameNo[ptIdx].erase(vectIt);
-            _pts2DIdx[ptIdx].erase(_pts2DIdx[ptIdx].begin() + pos);
-            Mat newDesc(_descriptor[ptIdx].rows -1 , _descriptor[ptIdx].cols, _descriptor[ptIdx].type());
-            Size dSize = newDesc.size();
-            if (pos > 0) {
-                Rect roi(0,0,dSize.width,pos);
-                _descriptor[ptIdx](roi).copyTo(newDesc(roi));
-            }
-            if (pos < (dSize.height - 1)) {
-                Rect roiFrom(0,pos+1,dSize.width,dSize.height-pos-1);
-                Rect roiTo(0, pos, dSize.width, dSize.height-pos-1);
-                _descriptor[ptIdx](roiFrom).copyTo(newDesc(roiTo));
-            }
-            _descriptor[ptIdx] = newDesc;
-            
-            //remove frame from list associated to point
-            pair<unordered_multimap<int,int>::iterator, unordered_multimap<int,int>::iterator> frameRange = _pointInFrameIdx.equal_range(ptIdx);
-            for (auto itFrame = frameRange.first; itFrame != frameRange.second; ++itFrame) {
-                int fIdx = itFrame->second;
-                if (fIdx == frameNo) {
-                    _pointInFrameIdx.erase(itFrame);
-                    break;
-                }
+    //for all points, remove from vectors
+    for (int i = 0; i < framePtsIdx.size(); i++) {
+        //get position
+        int ptIdx = framePtsIdx[i];
+        
+        //it is not actually needed to remove information from vectors as long as it is removed from lookup multimaps
+        vector<int>::iterator vectIt = lower_bound(_frameNo[ptIdx].begin(), _frameNo[ptIdx].end(), frameNo);
+        int pos = vectIt - _frameNo[ptIdx].begin();
+        
+        //remove from vectors
+        _frameNo[ptIdx].erase(vectIt);
+        _pts2DIdx[ptIdx].erase(_pts2DIdx[ptIdx].begin() + pos);
+        Mat newDesc(_descriptor[ptIdx].rows -1 , _descriptor[ptIdx].cols, _descriptor[ptIdx].type());
+        Size dSize = newDesc.size();
+        if (pos > 0) {
+            Rect roi(0,0,dSize.width,pos);
+            _descriptor[ptIdx](roi).copyTo(newDesc(roi));
+        }
+        if (pos < (dSize.height - 1)) {
+            Rect roiFrom(0,pos+1,dSize.width,dSize.height-pos-1);
+            Rect roiTo(0, pos, dSize.width, dSize.height-pos-1);
+            _descriptor[ptIdx](roiFrom).copyTo(newDesc(roiTo));
+        }
+        _descriptor[ptIdx] = newDesc;
+        
+        //remove frame from list associated to point
+        pair<unordered_multimap<int,int>::iterator, unordered_multimap<int,int>::iterator> frameRange = _pointInFrameIdx.equal_range(ptIdx);
+        for (auto itFrame = frameRange.first; itFrame != frameRange.second; ++itFrame) {
+            int fIdx = itFrame->second;
+            if (fIdx == frameNo) {
+                _pointInFrameIdx.erase(itFrame);
+                break;
             }
         }
     }
@@ -512,4 +510,21 @@ void CMap::removeFrame(const int frameNo) {
         _covisibilityGraph.erase(key1);
     }
     _covisibilityFrameIdx.erase(frameNo);
+}
+
+
+bool CMap::arePointsSeenByAtLeast(const vector<int> &pts3DIdx, const int nFramesThreshold, const double ratioPtsThreshold) {
+    
+    int ptsThreshold = ceil(ratioPtsThreshold*pts3DIdx.size());
+    int countTrue = 0;
+    for (int i = 0; i < pts3DIdx.size(); i++) {
+        int idx = pts3DIdx[i];
+        if (_frameNo[idx].size() > nFramesThreshold) {
+            countTrue++;
+            if (countTrue > ptsThreshold)
+                return true;
+        }
+    }
+    
+    return false;
 }

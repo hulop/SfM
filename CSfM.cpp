@@ -168,13 +168,12 @@ bool CSfM::mapping() {
             //update map and frames
             vector<int> filtPts3DIdx;
             Mat pDesc, cDesc;
-            _mapper.addNewPoints(filtPts3D, {prevFilt2DIdx, currFilt2DIdx}, {connectedKFNo[i],  lastKFNo}, filtPts3DIdx);
+            _mapper.addNewPoints(filtPts3D, {prevFilt2DIdx}, {connectedKFNo[i]}, filtPts3DIdx);
             _kFrames[kfIdx].updatePoints(prevFilt2DIdx, filtPts3DIdx);
-            _kFrames[lastKFIdx].updatePoints(currFilt2DIdx, filtPts3DIdx);
             _kFrames[kfIdx].getDescriptorsAt(prevFilt2DIdx, pDesc);
             _kFrames[lastKFIdx].getDescriptorsAt(currFilt2DIdx, cDesc);
             _mapper.addDescriptors(filtPts3DIdx, pDesc);
-            _mapper.addDescriptors(filtPts3DIdx, cDesc);
+            
         
             count += filtPts3D.size();
             
@@ -210,9 +209,12 @@ bool CSfM::mapping() {
                         newPts2DIdx.push_back(unmatchedPts2DIdx[matchIdx1[k]]);
                     }
                     updateMapAndFrame(connectedKFNo[j], newPts3DIdx, newPts2DIdx);
-                
                 }
             }
+            //update
+            _mapper.addPointMatches(filtPts3DIdx, currFilt2DIdx, lastKFNo);
+            _kFrames[lastKFIdx].updatePoints(currFilt2DIdx, filtPts3DIdx);
+            _mapper.addDescriptors(filtPts3DIdx, cDesc);
          }
     }
     
@@ -1278,22 +1280,20 @@ int CSfM::cullKeyFrames(double thresholdRate) {
         _kFrames[kfIdx].getMatchedPoints(pts3DIdx);
         int frameNo = _kFrames[kfIdx].getFrameNo();
         
-        //check if these points have been matched by at least _minVisibilityFrameNo other keyframes
-        int count = 0;
-        for (int j = 0; j < pts3DIdx.size(); j++) {
-            int visibilityFrameNo = _mapper.getPointFrameVisibility(pts3DIdx[j]);
-            if (visibilityFrameNo > _minVisibilityFrameNo)
-                count++;
-        }
+        //check if at least thresholdRate points have been matched by at least _minVisibilityFrameNo other keyframes
+        bool cull = _mapper.arePointsSeenByAtLeast(pts3DIdx, _minVisibilityFrameNo, thresholdRate);
         
-        //if the number of visible points is larger than thresholdRate, cull the frame
-        double rate = (double)count/pts3DIdx.size();
-        if (rate > thresholdRate) {
+        //if so, cull the frame
+        if (cull) {
             //remove frame references from the map
-            _mapper.removeFrame(frameNo);
+            _mapper.removeFrame(frameNo, pts3DIdx);
             
             //remove from list of keyframes
             _kFrames.erase(_kFrames.begin() + kfIdx);
+            
+            //remove from lookup vector
+            _kFrameIdxToFrameNo.erase(kfIdx);
+            _FrameNoTokFrameIdx.erase(frameNo);
             
             culledFrameNo++;
         } else {
