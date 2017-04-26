@@ -70,7 +70,7 @@ int main(int argc, const char * argv[]) {
     Mat firstFrame, frameIn;
     for (int i = 0; i < 350; i++) {
 #ifdef DEBUGINFO
-        cout << "Frame " << i << endl;
+        //cout << "Frame " << i << endl;
 #endif
         videoIn >> frameIn;
         

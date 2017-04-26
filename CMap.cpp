@@ -35,7 +35,14 @@ CMap::~CMap() {
 void CMap::addNewPoints(const vector<Matx31d> &pts3D, const vector<vector<int> > &pts2DIdx, const vector<int> &frameNo, vector<int> &pts3DIdx) {
     
     const int oldCount = _lastPtNo;
+    //preallocate for speed
+    int newSize = _pts3D.size() + pts3D.size();
     pts3DIdx.reserve(pts3D.size());
+    _pts3D.reserve(newSize);
+    _pts3DIdx.reserve(newSize);
+    _frameNo.reserve(newSize);
+    _pts2DIdx.reserve(newSize);
+    _descriptor.reserve(newSize);
     for (int i = 0; i < pts3D.size(); i++) {
         _pts3D.push_back(pts3D[i]);
         _pts3DIdx.push_back(_lastPtNo);
@@ -129,7 +136,10 @@ void CMap::getPointsAtIdx(const vector<int> &pts3DIdx, vector<Matx31d> &pts3D) {
 
 void CMap::getPointsInFrame(vector<Matx31d> &pts3D, vector<int> &pts2DIdx, const int frameNo) {
     
+    int nPoints = _frameViewsPointIdx.count(frameNo);
     auto range = _frameViewsPointIdx.equal_range(frameNo);
+    pts3D.reserve(pts3D.size()+nPoints);
+    pts2DIdx.reserve(pts2DIdx.size()+nPoints);
     if ((range.first != _frameViewsPointIdx.end()) && (range.second != range.first)) {
         for (auto it = range.first; it != range.second; ++it) {
             int ptIdx = it->second;
@@ -145,7 +155,11 @@ void CMap::getPointsInFrame(vector<Matx31d> &pts3D, vector<int> &pts2DIdx, const
 
 void CMap::getPointsInFrame(vector<Matx31d> &pts3D, vector<int> &pts3DIdx, vector<int> &pts2DIdx, const int frameNo) {
     
+    int nPoints = _frameViewsPointIdx.count(frameNo);
     auto range = _frameViewsPointIdx.equal_range(frameNo);
+    pts3D.reserve(pts3D.size()+nPoints);
+    pts3DIdx.reserve(pts3DIdx.size()+nPoints);
+    pts2DIdx.reserve(pts2DIdx.size()+nPoints);
     if ((range.first != _frameViewsPointIdx.end()) && (range.second != range.first)) {
         for (auto it = range.first; it != range.second; ++it) {
             int ptIdx = it->second;
@@ -162,7 +176,11 @@ void CMap::getPointsInFrame(vector<Matx31d> &pts3D, vector<int> &pts3DIdx, vecto
 
 void CMap::getPointsInFrame_Mutable(vector<double *> &pts3D, vector<int> &pts3DIdx, vector<int> &pts2DIdx, const int frameNo) {
     
+    int nPoints = _frameViewsPointIdx.count(frameNo);
     auto range = _frameViewsPointIdx.equal_range(frameNo);
+    pts3D.reserve(pts3D.size()+nPoints);
+    pts3DIdx.reserve(pts3DIdx.size()+nPoints);
+    pts2DIdx.reserve(pts2DIdx.size()+nPoints);
     if ((range.first != _frameViewsPointIdx.end()) && (range.second != range.first)) {
         for (auto it = range.first; it != range.second; ++it) {
             int ptIdx = it->second;
@@ -179,7 +197,10 @@ void CMap::getPointsInFrame_Mutable(vector<double *> &pts3D, vector<int> &pts3DI
 
 void CMap::getPointsInFrame_Mutable(vector<double *> &pts3D, vector<int> &pts2DIdx, const int frameNo) {
     
+    int nPoints = _frameViewsPointIdx.count(frameNo);
     auto range = _frameViewsPointIdx.equal_range(frameNo);
+    pts3D.reserve(pts3D.size()+nPoints);
+    pts2DIdx.reserve(pts2DIdx.size()+nPoints);
     if ((range.first != _frameViewsPointIdx.end()) && (range.second != range.first)) {
         for (auto it = range.first; it != range.second; ++it) {
             int ptIdx = it->second;
@@ -194,7 +215,11 @@ void CMap::getPointsInFrame_Mutable(vector<double *> &pts3D, vector<int> &pts2DI
 }
 
 void CMap::getPointsInFrame(vector<int> &pts3DIdx, vector<int> &pts2DIdx, const int frameNo) {
+    
+    int nPoints = _frameViewsPointIdx.count(frameNo);
     auto range = _frameViewsPointIdx.equal_range(frameNo);
+    pts3DIdx.reserve(pts3DIdx.size()+nPoints);
+    pts2DIdx.reserve(pts2DIdx.size()+nPoints);
     if ((range.first != _frameViewsPointIdx.end()) && (range.second != range.first)) {
         for (auto it = range.first; it != range.second; ++it) {
             int ptIdx = it->second;
@@ -213,6 +238,8 @@ void CMap::getPointsInFrames(vector<Matx31d> &pts3D, vector<int> &pts3DIdx, cons
     for (int i = 0; i < frameNo.size(); i++) {
         //find points for each frame
         auto range = _frameViewsPointIdx.equal_range(frameNo[i]);
+        int count = _frameViewsPointIdx.count(frameNo[i]);
+        pts3DIdx.reserve(pts3DIdx.size()+count);
         if ((range.first != _frameViewsPointIdx.end()) && (range.second != range.first)) {
             for (auto it = range.first; it != range.second; ++it)
                 pts3DIdx.push_back(it->second);
@@ -237,6 +264,8 @@ void CMap::getPointsInFrames(vector<int> &pts3DIdx, const vector<int> &frameNo) 
     for (int i = 0; i < frameNo.size(); i++) {
         //find points for each frame
         auto range = _frameViewsPointIdx.equal_range(frameNo[i]);
+        int count = _frameViewsPointIdx.count(frameNo[i]);
+        pts3DIdx.reserve(pts3DIdx.size()+count);
         if ((range.first != _frameViewsPointIdx.end()) && (range.second != range.first)) {
             for (auto it = range.first; it != range.second; ++it)
                 pts3DIdx.push_back(it->second);
@@ -260,6 +289,7 @@ void CMap::getPoints(vector<Matx31d> &pts3D) {
 }
 
 void CMap::getPoints_Mutable(vector<double*> &pts3D) {
+    pts3D.reserve(_pts3DIdx.size());
     for (int i = 0; i < _pts3DIdx.size(); i++) {
         int idx = _pts3DIdx[i];
         pts3D.push_back(_pts3D[idx].val);
@@ -320,6 +350,8 @@ void CMap::getFramesConnectedToFrame(int frameNo, vector<int> &covisibleFrames, 
 
 void CMap::getPointsInFrame(vector<int> &pts3DIdx, const int frameNo) {
     auto range = _frameViewsPointIdx.equal_range(frameNo);
+    int count = _frameViewsPointIdx.count(frameNo);
+    pts3DIdx.reserve(pts3DIdx.size()+count);
     if ((range.first != _frameViewsPointIdx.end()) && (range.second != range.first)) {
         for (auto it = range.first; it != range.second; ++it)
             pts3DIdx.push_back(it->second);
