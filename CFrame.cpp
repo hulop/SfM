@@ -365,12 +365,15 @@ void CFrame::getUnmatchedPoints(vector<Point2d> &pts2D, Mat &desc, vector<int> &
 }
 
 void CFrame::getPointsAt(const vector<int> &pts2DIdx, vector<Point2d> &pts2D) {
+        pts2D.reserve(pts2D.size()+pts2DIdx.size());
     for (int i = 0; i < pts2DIdx.size(); i++) {
         pts2D.push_back(_pts[pts2DIdx[i]]);
     }
 }
 
 void CFrame::getPointsAt(const vector<int> &pts2DIdx, vector<Point2f> &pts2D) {
+    
+    pts2D.reserve(pts2D.size()+pts2DIdx.size());
     for (int i = 0; i < pts2DIdx.size(); i++) {
         int idx = pts2DIdx[i];
         pts2D.push_back(Point2f(_pts[idx].x,_pts[idx].y));

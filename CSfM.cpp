@@ -451,6 +451,7 @@ void CSfM::bundleAdjustment(const vector<int> &frameIdx, int isStructAndPose) {
     
     vector<int> org3dIdx;
     
+    
     for (int i = 0; i < frameIdx.size(); i++) {
         vector<int> pts2dIdx;
         int currIdx = frameIdx[i];
@@ -467,6 +468,7 @@ void CSfM::bundleAdjustment(const vector<int> &frameIdx, int isStructAndPose) {
         _kFrames[kFrameIdx].getPointsAt(pts2dIdx, pts2d);
         //get camera indices for the points added
         int prevSize = camIdx.size();
+        camIdx.reserve(pts3d.size());
         for (int j = 0; j < pts3d.size() - prevSize; j++) {
             camIdx.push_back(i);
         }
