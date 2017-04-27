@@ -23,10 +23,14 @@
 #define CTracker_hpp
 
 #include <stdio.h>
+#include "CKeyFrame.h"
 #include "opencv2/opencv.hpp"
 #include "Eigen/Dense"
 #include "ceres/ceres.h"
 #include "ceres/rotation.h"
+#include "../../cvUtils/VectorUtils.hpp"
+#include "../../cvUtils/GeometryUtils.hpp"
+#include "brisk/brisk.h"
 
 #endif /* CTracker_hpp */
 
@@ -34,12 +38,27 @@ using namespace std;
 using namespace cv;
 
 class CTracker {
+    friend class CSfM;
 public:
     
-    CTracker();
+    CTracker(const Matx33d &K, const vector<double> &d, const Size &imSize);
     ~CTracker();
-    
 
+    //feature detection
+    bool detectFeaturesOpticalFlow();
+    bool detectFeatures();
+    
+    //tracking and matching
+    void matchFeaturesRadius(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1);
+    void matchFeatures(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1);
+    void matchFeaturesRadius(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1, const double minDistance, const double maxDistance);
+    void matchFeatures(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1, const double minDistance, const double maxDistance);
+    bool matchFeaturesRadius();
+    bool matchFeatures();
+    bool computeOpticalFlow();
+    
+    void setCurrentFrame(const Mat &frameIn, const int frameNo) {_currFrame.setFrame(frameIn,frameNo);}
+    void setCurrentFrame(const Mat &frameIn, const int frameNo, const Mat &K);
     
     //bundle adjustment
     void bundleAdjustmentStructAndPose(const vector<Point2d> &observations, const vector<int> &camIdx, const vector<Matx33d> &K, vector<double*> &R, vector<double*> &t, vector<double*> &pts3D, int isStructOrPose);
@@ -48,6 +67,36 @@ public:
     
 private:
 
+    
+    //feature matching and description
+    Ptr<FeatureDetector> _detector;
+    Ptr<DescriptorExtractor> _descriptor;
+    brisk::BruteForceMatcher _matcher;
+    
+    //thresholds
+    int _minFeatures;
+    double _ratioTest;
+    double _maxMatchDistance;
+    double _minMatchDistance;
+    double _maxMatchDistanceSq;
+    double _minMatchDistanceSq;
+    double _maxHammingDistance;
+    double _maxOrgFeatDist;
+    
+    //matching structures
+    vector<Point2f> _prevMatch;
+    vector<Point2f> _currMatch;
+    
+    vector<int> _matchStatus;
+    vector<float> _matchDistance;
+    vector<int> _matchedIdx;
+    
+    vector<int> _prevIdx;
+    vector<int> _currIdx;
+    
+    //frames
+    CFrame _prevFrame;
+    CFrame _currFrame;
     
     //bundle adjustment structures
     struct BAStructAndPoseFunctor {

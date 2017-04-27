@@ -44,6 +44,7 @@ using namespace std;
 #define LOST 2
 
 class CSfM {
+
 public:
     CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d);
     ~CSfM();
@@ -54,24 +55,15 @@ public:
     void stopVideoOutput();
     
 private:
-    
+
+    //SLAM threads
     bool init();
-    bool computeOpticalFlow();
-    bool detectFeatures();
-    bool detectFeaturesOpticalFlow();
-    
-    void filterMatches(const vector<uchar> &status);
-    void filterMatches(const vector<int> &outIdx);
-    template<typename T>
-    void filterArray(const vector<int> &outIdx, vector<T> &v);
-    bool matchFeatures();
-    void matchFeatures(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1, double minDistance, double maxDistance);
-    bool matchFeaturesRadius();
-    void matchFeaturesRadius(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1, double minDistance, double maxDistance);
-    
     bool tracking();
     bool recovery();
     bool mapping();
+    
+    void filterMatches(const vector<uchar> &status);
+    
     bool addKeyFrame();
     int cullMapPoints();
     int cullKeyFrames(double thresholdRate = 0.9);
@@ -94,15 +86,6 @@ private:
     vector<CKeyFrame> _kFrames;
     
     //parameters
-    int _minFeatures;
-    double _ratioTest;
-    double _maxMatchDistance;
-    double _minMatchDistance;
-    double _maxMatchDistanceSq;
-    double _minMatchDistanceSq;
-    double _maxReprErr;
-    double _maxOrgFeatDist;
-    double _maxHammingDistance;
     int _lostCount;
     int _maxLost;
     int _frameCount;
@@ -110,6 +93,7 @@ private:
     int _covisibilityThreshold;
     int _newKFrameTimeLag;
     int _minVisibilityFrameNo;
+    double _maxReprErr;
     
     //tracker
     CTracker _tracker;
@@ -125,22 +109,21 @@ private:
     int _motionHistoryLength;
     
     //feature detection and matching
-    Ptr<FeatureDetector> _detector;
-    Ptr<DescriptorExtractor> _descriptor;
-    brisk::BruteForceMatcher _matcher;
+    //Ptr<FeatureDetector> _detector;
+    //Ptr<DescriptorExtractor> _descriptor;
+    //brisk::BruteForceMatcher _matcher;
     
-    CFrame _currFrame;
-    CFrame _prevFrame;
-    vector<Point2f> _prevMatch;
-    vector<Point2f> _currMatch;
-    vector<double> _parallax;
-    
-    vector<int> _matchStatus;
-    vector<float> _matchDistance;
-    vector<int> _matchedIdx;
-    
-    vector<int> _prevIdx;
-    vector<int> _currIdx;
+    //CFrame _currFrame;
+    //CFrame _prevFrame;
+//    vector<Point2f> _prevMatch;
+//    vector<Point2f> _currMatch;
+//    
+//    vector<int> _matchStatus;
+//    vector<float> _matchDistance;
+//    vector<int> _matchedIdx;
+//    
+//    vector<int> _prevIdx;
+//    vector<int> _currIdx;
     
     //output video
     VideoWriter _vOut;

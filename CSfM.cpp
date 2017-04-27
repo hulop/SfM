@@ -22,32 +22,23 @@
 
 #include "CSfM.h"
 
-CSfM::CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d) : _currFrame(K,d,imSize), _prevFrame(K,d,imSize) {
+CSfM::CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d) : _tracker(K,d,imSize)  {
     _state = NOT_INITIALIZED;
-
-    //initialise detector and descriptor
-    _detector = new brisk::BriskFeatureDetector(60,6,true);
-    bool rotInvariant = true, scaleInvariant = true;
-    _descriptor = new brisk::BriskDescriptorExtractor(rotInvariant,scaleInvariant,brisk::BriskDescriptorExtractor::Version::briskV2);
     
-    _ratioTest = 0.8;
+//    //initialise detector and descriptor
+//    _detector = new brisk::BriskFeatureDetector(60,6,true);
+//    bool rotInvariant = true, scaleInvariant = true;
+//    _descriptor = new brisk::BriskDescriptorExtractor(rotInvariant,scaleInvariant,brisk::BriskDescriptorExtractor::Version::briskV2);
     
-    //other parameters
-    _maxMatchDistance = 40; //maximum distance between matching features (small motion prior)
-    _minMatchDistance = 1.5; //minimum distance between matching features (parallax constraint
-    _minFeatures = 5; //minimum number of matches
+ 
     _maxReprErr = 7; //maximum average reprojection/transfer error
-    _maxOrgFeatDist = 1; //minimum distance between detected features and computed flow
+
     _lostCount = 0;
     _minCovisibilityStrength = 50; //how many points are covisible between frames for bundle adjustment to proceed
     _maxLost = 10; //how many frames can be processed before declaring loss of track
     _frameCount = 0; //frame counter
     _motionHistoryLength = 2; //how many frames should you remember the pose for depending on how complicated the motion model is
-    _maxHammingDistance = 90;
-    
-    //square thresholds for efficiency
-    _minMatchDistanceSq = _minMatchDistance*_minMatchDistance;
-    _maxMatchDistanceSq = _maxMatchDistance*_maxMatchDistance;
+
     
     //time threshold before adding new keyframe
     _newKFrameTimeLag = 10;
@@ -71,18 +62,31 @@ void CSfM::addFrame(cv::Mat frameIn) {
 #endif
     
     //set frame
-    _currFrame.setFrame(frameIn,_frameCount);
+    _tracker.setCurrentFrame(frameIn,_frameCount);
+    //_currFrame.setFrame(frameIn,_frameCount);
     
     bool success;
     int nCulledPts;
+    chrono::time_point<chrono::steady_clock> startT;
+    chrono::time_point<chrono::steady_clock> endT;
+    chrono::duration<double,std::milli> duration;
     switch (_state) {
         case NOT_INITIALIZED:
             success = init();
             break;
         case RUNNING:
+            startT = chrono::steady_clock::now();
             success = tracking();
-            if (_keyFrameAdded)
+            endT = chrono::steady_clock::now();
+            duration = chrono::duration_cast<chrono::milliseconds>(endT - startT);
+            cout << "Tracking: " << duration.count() << endl;
+            if (_keyFrameAdded) {
+                startT = chrono::steady_clock::now();
                 mapping();
+                endT = chrono::steady_clock::now();
+                duration = chrono::duration_cast<chrono::milliseconds>(endT - startT);
+                cout << "Mapping: " << duration.count() << endl;
+            }
 
 #ifdef DEBUGINFO
          //   cout << "Culled " << nCulledPts << " map points" << endl;
@@ -133,7 +137,7 @@ bool CSfM::mapping() {
         //match points
         vector<int> prevMatchIdx, currMatchIdx;
         vector<Point2d> prevMatchPts2D, currMatchPts2D;
-        matchFeatures(prevUnmatchedPts2D, prevUnmatchedDesc, currUnmatchedPts2D, currUnmatchedDesc, prevMatchIdx, currMatchIdx, _minMatchDistance, _maxMatchDistance);
+        _tracker.matchFeatures(prevUnmatchedPts2D, prevUnmatchedDesc, currUnmatchedPts2D, currUnmatchedDesc, prevMatchIdx, currMatchIdx);
         prevMatchPts2D.reserve(prevMatchIdx.size());
         currMatchPts2D.reserve(currMatchIdx.size());
         for (int j = 0; j < prevMatchIdx.size(); j++) {
@@ -196,9 +200,9 @@ bool CSfM::mapping() {
                 
                     vector<int> matchIdx0, matchIdx1;
                     if (abs(connectedKFNo[j] - connectedKFNo[i]) < abs(connectedKFNo[j] - lastKFNo))
-                        matchFeatures(reprPts2D, pDesc, unmatchedPts2D, unmatchedDesc, matchIdx0, matchIdx1, 0, _maxReprErr);
+                        _tracker.matchFeatures(reprPts2D, pDesc, unmatchedPts2D, unmatchedDesc, matchIdx0, matchIdx1, 0, _maxReprErr);
                     else
-                        matchFeatures(reprPts2D, cDesc, unmatchedPts2D, unmatchedDesc, matchIdx0, matchIdx1, 0, _maxReprErr);
+                        _tracker.matchFeatures(reprPts2D, cDesc, unmatchedPts2D, unmatchedDesc, matchIdx0, matchIdx1, 0, _maxReprErr);
                 
                     //get matched 3d points index and update frame
                     vector<int> newPts3DIdx, newPts2DIdx;
@@ -247,200 +251,6 @@ bool CSfM::mapping() {
     return success;
 }
 
-bool CSfM::init() {
-    
-    //bool success = detectFeaturesOpticalFlow();
-    bool success = detectFeatures();
-    
-    //if features are detected
-    if (success) {
-        //if this is the first frame
-        if (_kFrames.size() == 0) {
-            CKeyFrame firstFrame(_currFrame);
-            _kFrames.push_back(firstFrame);
-            _kFrames[0].setPose();
-            _kFrameIdxToFrameNo[0] = _currFrame.getFrameNo();
-            _FrameNoTokFrameIdx[_currFrame.getFrameNo()] = 0;
-            
-            //swap buffers
-            _prevFrame = _currFrame;
-            return true;
-        }
-        else {
-            
-            bool enoughFeaturesFound = matchFeatures();
-            //bool enoughFeaturesFound = computeOpticalFlow();
-            
-            if (!enoughFeaturesFound) {
-                //reset frames
-                //_kFrames.pop_back();
-                //CKeyFrame firstFrame(_currFrame);
-                //_kFrames.push_back(firstFrame);
-#ifdef DEBUGINFO
-                cout << "Not enough features found" << endl;
-#endif
-            }
-            else {
-                
-                //find homography and fundamental matrix
-                //DO NOT USE RANSAC for the following reasons:
-                //1. matching correctness is ensured by optical flow (filtering is at the detector/matcher stage, not at the tracking stage)
-                //2. unless the points are uniformely distributed it is possible to select a set that lies on the same plane, which yields an incorrect result
-                vector<uchar> Hmask, Fmask;
-                Matx33f H = findHomography( _prevMatch, _currMatch, 0, 5.99, Hmask);
-                Matx33f F = findFundamentalMat(_prevMatch, _currMatch, CV_FM_RANSAC, 3.84,0.99, Fmask);
-               
-                if (!Mat(H).empty() || !Mat(F).empty()) {
-                    Matx33d R_init;
-                    Vec3d t_init;
-                    
-                    float s_h = calculateHomographyScore(_prevMatch, _currMatch, H, Hmask, 5.99, 5.99);
-                    float s_f = calculateFundamentalScore(_prevMatch, _currMatch, F, Fmask, 3.84, 5.99);
-                    
-                    //get intrinsic matrices
-                    Matx33f K0 = _kFrames[0].getIntrinsicUndistorted();
-                    Matx33f K1 = _currFrame.getIntrinsicUndistorted();
-                    
-                    //choose best model
-                    double r_h = s_h / (s_h + s_f);
-                    bool canInit = false;
-                    if (r_h > 1) {
-                        //choose homography
-#ifdef DEBUGINFO
-                        
-                        cout << "Homography initialization" << endl;
-#endif
-                        
-                        //filter outliers
-                        filterMatches(Hmask);
-                        
-                        
-                        //calculate reprojection error
-                        double errHomo = GeometryUtils::calculateHomographyAvgError(_prevMatch, _currMatch, H);
-                        
-                        //find decomposition
-                        bool canDecompose = GeometryUtils::RtFromHomographyMatrix(H, K0, K1, _prevMatch, _currMatch, R_init, t_init);
-#ifdef DEBUGINFO
-                        if (errHomo >= _maxReprErr)
-                            cout << "Homography transfer error too large" << endl;
-#endif
-                        
-                        if (canDecompose && (errHomo < _maxReprErr)) {
-                            canInit = true;
-                        }
-                        
-                    }
-                    else {
-                        //choose fundamental matrix
-#ifdef DEBUGINFO
-                        cout << "Fundamental matrix initialization" << endl;
-#endif
-                        //remove outliers
-                        filterMatches(Fmask);
-                        
-                        //find reprojection error on epilines
-                        double errFund = GeometryUtils::calculateFundamentalAvgError(_prevMatch, _currMatch, F);
-                
-                        //essential matrix
-                        Matx33f E = K0.t()*F*K1;
-                        //decompose essential
-                        bool canDecompose = GeometryUtils::RtFromEssentialMatrix(E, K0, K1, _prevMatch, _currMatch, R_init, t_init);
-#ifdef DEBUGINFO
-                        if (errFund >= _maxReprErr)
-                            cout << "Symmetric transfer error too large" << endl;
-#endif
-                        if (canDecompose && (errFund < _maxReprErr)) {
-                            
-                            canInit = true;
-                        }
-                    }
-                    
-                    
-                    if (canInit) {
-                        
-                        //set pose information
-                        _currFrame.setPose(R_init,t_init);
-                        
-                        //triangulate points
-                        vector<Matx31d> pts3D;
-                        GeometryUtils::triangulatePoints(_kFrames[0].getProjectionMatrix(), _currFrame.getProjectionMatrix(), K0, K1, _prevMatch, _currMatch, pts3D);
-                        
-                        //remove outliers
-                        vector<uchar> status;
-                        int nRemoved = GeometryUtils::filterMatches(F, _prevMatch, _currMatch, pts3D, status, _maxReprErr);
-#ifdef DEBUGINFO
-                        cout << "Removed " << nRemoved << " outliers" << endl;
-#endif
-                        vector<int> tPrevIdx, tCurrIdx;
-                        vector<Point2f> tPrevMatch, tCurrMatch;
-                        vector<Matx31d> filt3D;
-                        tPrevIdx.reserve(_prevIdx.size() - nRemoved);
-                        tCurrIdx.reserve(_currIdx.size() - nRemoved);
-                        tPrevMatch.reserve(_prevMatch.size() - nRemoved);
-                        tCurrMatch.reserve(_currMatch.size() - nRemoved);
-                        for (int i = 0; i < status.size(); i++) {
-                            if (status[i] == 1) {
-                                tPrevIdx.push_back(_prevIdx[i]);
-                                tCurrIdx.push_back(_currIdx[i]);
-                                tPrevMatch.push_back(_prevMatch[i]);
-                                tCurrMatch.push_back(_currMatch[i]);
-                                filt3D.push_back(pts3D[i]);
-                            }
-                        }
-                        _prevIdx = tPrevIdx; _currIdx = tCurrIdx; _prevMatch = tPrevMatch; _currMatch = tCurrMatch;
-
-                        //update map and frames
-                        vector<int> pts3DIdx;
-                        _mapper.addNewPoints(filt3D,vector<vector<int>>{_prevIdx,_currIdx}, vector<int>{_kFrames[0].getFrameNo(),_currFrame.getFrameNo()},pts3DIdx);
-                        
-                        _kFrames[0].updatePoints(_prevMatch,_prevIdx,pts3DIdx);
-                        _currFrame.updatePoints(_currMatch,_currIdx,pts3DIdx);
-                        
-                        //bundle adjustment of both structure and pose
-                        bundleAdjustment(vector<int>{_kFrames[0].getFrameNo(),_currFrame.getFrameNo()},CTracker::BA_TYPE::STRUCT_AND_POSE);
-                        
-                        //add descriptors
-                        Mat prevDescriptors, currDescriptors;
-                        _kFrames[0].getDescriptorsAt(_prevIdx, prevDescriptors);
-                        _currFrame.getDescriptorsAt(_currIdx, currDescriptors);
-                        _mapper.addDescriptors(pts3DIdx, prevDescriptors);
-                        _mapper.addDescriptors(pts3DIdx, currDescriptors);
-                        
-                        //add second frame to keyframe list
-                        _kFrames.push_back(CKeyFrame(_currFrame));
-                        _kFrameIdxToFrameNo[1] = _currFrame.getFrameNo();
-                        _FrameNoTokFrameIdx[_currFrame.getFrameNo()] = 1;
-                    
-#ifdef DEBUGINFO
-                        cout << "# Features triangulated in frame 0: " << _kFrames[0].getNMatchedPoints() << endl;
-                        cout << "# Features triangulated in frame 1: " << _kFrames[1].getNMatchedPoints() << endl;
-#endif
-                        
-                        //change state
-                        _minMatchDistance = 0;
-                        _state = RUNNING;
-                        _prevFrame = _currFrame;
-                        return true;
-                    }
-                    else {
-                        //pop frame and start again
-                        //_kFrames.pop_back();
-                        //_currFrame = _prevFrame;
-                    }
-                } //computed valid fundamental and homography matrix
-            
-            }//match found
-        
-        } //second frame processed
-    
-    } //not enough features detected
-    
-    //if enough time has passed, swap buffers to avoid remaining stuck with the first frame
-    if (_currFrame.getFrameNo() >= _prevFrame.getFrameNo() + _newKFrameTimeLag)
-        _prevFrame = _currFrame;
-    return false;
-}
-
 void CSfM::bundleAdjustment(const vector<int> &frameIdx, int isStructAndPose) {
     vector<double*> R;
     vector<double*> t;
@@ -484,415 +294,32 @@ void CSfM::bundleAdjustment(const vector<int> &frameIdx, int isStructAndPose) {
     }
 }
 
-
-
 void CSfM::filterMatches(const vector<uchar> &status) {
     //filter matches according to the status mask from findhomography or findfundamental
     vector<Point2f> tempPrevMatch, tempCurrMatch;
     vector<int> tempPrevIdx, tempCurrIdx;
+    
+    tempPrevMatch.reserve(status.size());
+    tempCurrMatch.reserve(status.size());
+    tempPrevIdx.reserve(status.size());
+    tempCurrIdx.reserve(status.size());
     for (int i = 0; i < status.size(); i++) {
         if (status[i] == 1) {
-            tempPrevMatch.push_back(_prevMatch[i]);
-            tempCurrMatch.push_back(_currMatch[i]);
-            tempPrevIdx.push_back(_prevIdx[i]);
-            tempCurrIdx.push_back(_currIdx[i]);
+            tempPrevMatch.push_back(_tracker._prevMatch[i]);
+            tempCurrMatch.push_back(_tracker._currMatch[i]);
+            tempPrevIdx.push_back(_tracker._prevIdx[i]);
+            tempCurrIdx.push_back(_tracker._currIdx[i]);
         }
     }
     //swap buffers
-    _prevMatch = tempPrevMatch;
-    _currMatch = tempCurrMatch;
-    _prevIdx = tempPrevIdx;
-    _currIdx = tempCurrIdx;
-}
-
-void CSfM::filterMatches(const vector<int> &outIdx) {
-    vector<uchar> status(_prevMatch.size(),1);
-    
-    for (int i = 0; i < outIdx.size(); i++)
-        status[outIdx[i]] = 0;
-    
-    filterMatches(status);
-}
-
-template<typename T>
-void CSfM::filterArray(const vector<int> &outIdx, vector<T> &v) {
-    vector<uchar> status(v.size(),1);
-    
-    for (int i = 0; i < outIdx.size(); i++)
-        status[outIdx[i]] = 0;
-
-    vector<T> tempV;
-    tempV.reserve(v.size());
-    for (int i = 0; i < status.size(); i++) {
-        if (status[i] == 1) {
-            tempV.push_back(v[i]);
-        }
-    }
-    v = tempV;
+    swap(_tracker._prevMatch,tempPrevMatch);
+    swap(_tracker._currMatch,tempCurrMatch);
+    swap(_tracker._prevIdx,tempPrevIdx);
+    swap(_tracker._currIdx,tempCurrIdx);
 }
 
 void CSfM::predictFlow(vector<Point2f> &predPts) {
     //right now do nothing, initialise prediction with current coordinates
-}
-
-//compute optical flow from previous keyframe
-bool CSfM::computeOpticalFlow() {
-    
-    //parameters
-    TermCriteria termcrit(TermCriteria::COUNT|TermCriteria::EPS,20,0.03);
-    Size winSize(21,21), subPixWinSize(8,8);
-    vector<uchar> status;
-    vector<float> err;
-    int maxLevel = 3;
-    
-    //reset structures
-    _currMatch.clear();
-    _prevMatch.clear();
-    _currIdx.clear();
-    _prevIdx.clear();
-    _parallax.clear();
-    //structures
-    int lastKFrameIdx = _kFrames.size()-1;
-    vector<Point2f> currPts, prevPts;
-    Mat(_kFrames[lastKFrameIdx].getPointsDistorted()).copyTo(prevPts);
-    vector<Point2f> currMatch, currDetectedPoints;
-    Mat(_currFrame.getPointsDistorted()).copyTo(currDetectedPoints);
-    _matchDistance.assign(currDetectedPoints.size(), -1);
-    _matchStatus.assign(currDetectedPoints.size(), 0);
-    _matchedIdx.assign(currDetectedPoints.size(), -1);
-    
-    //predict motion of points
-    predictFlow(currPts);
-    
-    //compute LK optical flow
-    int matchCount = 0;
-    double maxDistSq = _maxMatchDistance*_maxMatchDistance;
-    double maxFeatDistSq = _maxOrgFeatDist*_maxOrgFeatDist;
-    double minDistSq = _minMatchDistance*_minMatchDistance;
- //   if (_prevFrame.getNPoints() > 0) {
-    calcOpticalFlowPyrLK(_kFrames[lastKFrameIdx].getFrameGrey(), _currFrame.getFrameGrey(), prevPts, currPts, status, err, winSize, maxLevel, termcrit, 0, 0.001 );
-    //check that PyrLK does not play tricks on us
-    assert(prevPts.size() == currPts.size());
-        
-    //check matches
-    for (int i = 0; i < status.size(); i++) {
-        if (status[i]) {
-            //look for actual detected point in other image
-            int idx = _currFrame.findClosestPointIndexDistorted(currPts[i]);
-            float e = (currPts[i].x - currDetectedPoints[idx].x)*(currPts[i].x - currDetectedPoints[idx].x) + (currPts[i].y - currDetectedPoints[idx].y)*(currPts[i].y - currDetectedPoints[idx].y);
-            float d = (prevPts[i].x - currPts[i].x)*(prevPts[i].x - currPts[i].x) + (prevPts[i].y - currPts[i].y)*(prevPts[i].y - currPts[i].y);
-            
-            if ((d < maxDistSq) && (e < maxFeatDistSq) && (d > minDistSq) && ((_matchDistance[idx] >= e) || (_matchDistance[idx] == -1)) ) {
-
-                //check if point was already matched
-                if (_matchStatus[idx] == 1) {
-                    //overwrite previous match since the one found is better
-                    const int oldIdx = _matchedIdx[idx];
-                    _prevIdx[oldIdx] = i;
-                    _parallax[oldIdx] = d;
-                } else {
-                    //save indices in CFrame arrays
-                    _prevIdx.push_back(i);
-                    _currIdx.push_back(idx);
-                    _parallax.push_back(d);
-
-                    _matchStatus[idx] = 1;
-                    _matchedIdx[idx] = matchCount;
-                    matchCount++;
-                }
-                
-                _matchDistance[idx] = e;
-            }
-        }
-    }
-
-    //save undistorted matches from indices
-    _kFrames[lastKFrameIdx].getPointsAt(_prevIdx, _prevMatch);
-    _currFrame.getPointsAt(_currIdx, _currMatch);
-
-    
-#ifdef DEBUGINFO
-        cout << "# Matches: " << sum(_matchStatus)[0] << endl;
-#endif
-        
- //   }
-    
-    if (matchCount >= _minFeatures)
-        return true;
-    
-    return false;
-}
-
-
-bool CSfM::detectFeaturesOpticalFlow() {
-    bool success = false;
-
-    int maxFeats = 500;
-    double qualityLvl = 0.05;
-    double minDistance = 10;
-    TermCriteria termcrit(TermCriteria::COUNT|TermCriteria::EPS,20,0.03);
-    Size subPixWinSize(5,5);
-    vector<Point2f> pts;
-
-    //detect corners
-    goodFeaturesToTrack(_currFrame.getFrameGrey(), pts, maxFeats, qualityLvl, minDistance);
-    
-    //subpixel refinement
-    cornerSubPix(_currFrame.getFrameGrey(), pts, subPixWinSize, Size(-1,-1), termcrit);
-    
-    if (pts.size() < _minFeatures)
-        return false;
-    
-    _currFrame.setPoints(pts);
-    return true;
-    
-}
-
-//detect BRISK features. Detector and descriptor are initialised in the constructor
-bool CSfM::detectFeatures() {
-    vector<KeyPoint> kp;
-    Mat desc;
-    
-    _detector->detect(_currFrame.getFrameGrey(), kp);
-    
-    if (kp.size() < _minFeatures)
-        return false;
-    
-    _descriptor->compute(_currFrame.getFrameGrey(), kp, desc);
-    _currFrame.setKeyPoints(kp,desc);
-    return true;
-}
-
-void CSfM::matchFeatures(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1, double minDistance, double maxDistance) {
-    vector<vector<DMatch>> matches;
-    
-    _matcher.knnMatch(desc0, desc1, matches, 2);
-    vector<double> matchDistance;
-    vector<int> matchedIdx;
-    matchDistance.assign(pts1.size(), -1);
-    matchedIdx.assign(pts1.size(),-1);
-    
-    double minDistanceSq = minDistance*minDistance;
-    double maxDistanceSq = maxDistance*maxDistance;
-    int matchCount = 0;
-    for (int i = 0; i < matches.size(); i++) {
-        int prevIdx = matches[i][0].queryIdx;
-        int currIdx = matches[i][0].trainIdx;
-        double ratio = matches[i][0].distance/matches[i][1].distance;
-        double d = (pts0[prevIdx].x - pts1[currIdx].x)*(pts0[prevIdx].x - pts1[currIdx].x) + (pts0[prevIdx].y - pts1[currIdx].y)*(pts0[prevIdx].y - pts1[currIdx].y);
-        if ((d > minDistanceSq) && (d < maxDistanceSq) && (ratio < _ratioTest) && ((matchDistance[currIdx] == -1) || (matches[i][0].distance < matchDistance[currIdx]))) {
-            //matches are not 1-1
-            if (matchDistance[currIdx] == -1) {
-                matchIdx0.push_back(prevIdx);
-                matchIdx1.push_back(currIdx);
-                matchedIdx[currIdx] = matchCount;
-                matchCount++;
-            }
-            else {
-                int oldIdx = matchedIdx[currIdx];
-                matchIdx0[oldIdx] = prevIdx;
-            }
-            matchDistance[currIdx] = matches[i][0].distance;
-        }
-    }
-}
-
-void CSfM::matchFeaturesRadius(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1, double minDistance, double maxDistance) {
-    
-    vector<vector<DMatch>> matches;
-    vector<double> matchDistance;
-    vector<int> matchedIdx;
-    matchDistance.assign(pts1.size(), -1);
-    matchedIdx.assign(pts1.size(),-1);
-    double minDistanceSq = minDistance*minDistance;
-    double maxDistanceSq = maxDistance*maxDistance;
-    int matchCount = 0;
-    
-    for (int i = 0; i < pts0.size(); i++) {
-        Point2d prevPt = pts0[i];
-        
-        //for all points detected in the current frame, find all candidate matches
-        vector<int> candMatchIdx;
-        vector<double> candMatchDist;
-        for (int j = 0; j < pts1.size(); j++) {
-            Point2d currPt = pts1[j];
-            double dSq = (prevPt.x - currPt.x)*(prevPt.x - currPt.x) + (prevPt.y - currPt.y)*(prevPt.y - currPt.y);
-            //check that candidate match is within allowed motion window
-            if ((dSq < maxDistanceSq) && (dSq > minDistanceSq)) {
-                //calculate hamming distance and check that is below the threshold and better than any other existing matches
-                double ham = norm(desc0.row(i),desc1.row(j),NORM_HAMMING);
-                if ((ham < _maxHammingDistance) && ((ham < matchDistance[j]) || (matchDistance[j] == -1))) {
-                    candMatchIdx.push_back(j);
-                    candMatchDist.push_back(ham);
-                }
-            }
-        }
-        
-        if (candMatchIdx.size() != 0) {
-            int idx = -1;
-            if (candMatchIdx.size() > 1) {
-                //sort distances and do ratio test
-                vector<size_t> orgIdx = VectorUtils::sort_indexes(candMatchDist);
-                size_t topMatchIdx = orgIdx[0];
-                size_t secondMatchIdx = orgIdx[1];
-                bool ratioTest = ((candMatchDist[topMatchIdx]/candMatchDist[secondMatchIdx]) < _ratioTest);
-                if (ratioTest)
-                    idx = candMatchIdx[topMatchIdx];
-            } else
-                idx = candMatchIdx[0];
-            
-            //find best candidate and save
-            if (idx != -1) {
-                if (matchDistance[idx] == -1) {
-                    matchIdx0.push_back(i);
-                    matchIdx1.push_back(idx);
-                    matchedIdx[idx] = matchCount;
-                    matchCount++;
-                } else {
-                    int oldIdx = matchedIdx[idx];
-                    matchIdx0[oldIdx] = i;
-                }
-                matchDistance[idx] = candMatchDist[0];
-            }
-        }
-    }
-}
-
-bool CSfM::matchFeaturesRadius() {
-    //reset structures
-    _currMatch.clear();
-    _prevMatch.clear();
-    _currIdx.clear();
-    _prevIdx.clear();
-    vector<vector<DMatch>> matches;
-    
-    //get keypoints
-    vector<Point2d> prevPts, currPts;
-    Mat prevDesc, currDesc;
-    Mat(_prevFrame.getPointsDistorted()).copyTo(prevPts);
-    Mat(_currFrame.getPointsDistorted()).copyTo(currPts);
-    prevDesc = _prevFrame.getDescriptors();
-    currDesc = _currFrame.getDescriptors();
-    
-    //match candidates within radius
-    int matchCount = 0;
-    _matchDistance.assign(currPts.size(), -1);
-    _matchedIdx.assign(currPts.size(),-1);
-    for (int i = 0; i < prevPts.size(); i++) {
-        Point2d prevPt = prevPts[i];
-        
-        //for all points detected in the current frame, find all candidate matches
-        vector<int> candMatchIdx;
-        vector<double> candMatchDist;
-        for (int j = 0; j < currPts.size(); j++) {
-            Point2d currPt = currPts[j];
-            double dSq = (prevPt.x - currPt.x)*(prevPt.x - currPt.x) + (prevPt.y - currPt.y)*(prevPt.y - currPt.y);
-            //check that candidate match is within allowed motion window
-            if ((dSq < _maxMatchDistanceSq) && (dSq > _minMatchDistanceSq)) {
-                //calculate hamming distance and check that is below the threshold and better than any other existing matches
-                double ham = norm(prevDesc.row(i),currDesc.row(j),NORM_HAMMING);
-                if ((ham < _maxHammingDistance) && ((ham < _matchDistance[j]) || (_matchDistance[j] == -1))) {
-                    candMatchIdx.push_back(j);
-                    candMatchDist.push_back(ham);
-                }
-            }
-        }
-        
-        if (candMatchIdx.size() != 0) {
-            int idx = -1;
-            if (candMatchIdx.size() > 1) {
-                //sort distances and do ratio test
-                vector<size_t> orgIdx = VectorUtils::sort_indexes(candMatchDist);
-                size_t topMatchIdx = orgIdx[0];
-                size_t secondMatchIdx = orgIdx[1];
-                bool ratioTest = ((candMatchDist[topMatchIdx]/candMatchDist[secondMatchIdx]) < _ratioTest);
-                if (ratioTest)
-                    idx = candMatchIdx[topMatchIdx];
-            } else
-                idx = candMatchIdx[0];
-            
-            //find best candidate and save
-            if (idx != -1) {
-                if (_matchDistance[idx] == -1) {
-                    _prevIdx.push_back(i);
-                    _currIdx.push_back(idx);
-                    _matchedIdx[idx] = matchCount;
-                    matchCount++;
-                } else {
-                    int oldIdx = _matchedIdx[idx];
-                    _prevIdx[oldIdx] = i;
-                }
-                _matchDistance[idx] = candMatchDist[0];
-            }
-        }
-    }
-    
-    //save undistorted matches from indices
-    _prevFrame.getPointsAt(_prevIdx, _prevMatch);
-    _currFrame.getPointsAt(_currIdx, _currMatch);
-    
-    if (matchCount >= _minFeatures)
-        return true;
-    
-    return false;
-}
-
-bool CSfM::matchFeatures() {
-    //reset structures
-    _currMatch.clear();
-    _prevMatch.clear();
-    _currIdx.clear();
-    _prevIdx.clear();
-    vector<vector<DMatch>> matches;
-    
-    //get keypoints
-    vector<Point2d> prevPts, currPts;
-    Mat(_prevFrame.getPointsDistorted()).copyTo(prevPts);
-    Mat(_currFrame.getPointsDistorted()).copyTo(currPts);
-    
-    //match closest 2 candidates
-    _matcher.knnMatch(_prevFrame.getDescriptors(), _currFrame.getDescriptors(), matches, 2);
-    _matchDistance.assign(currPts.size(), -1);
-    _matchedIdx.assign(currPts.size(),-1);
-    
-    //TODO: worth doing Fwd/Bwd test?
-    int matchCount = 0;
-    for (int i = 0; i < matches.size(); i++) {
-        int prevIdx = matches[i][0].queryIdx;
-        int currIdx = matches[i][0].trainIdx;
-        double ratio = matches[i][0].distance/matches[i][1].distance;
-        double d = (prevPts[prevIdx].x - currPts[currIdx].x)*(prevPts[prevIdx].x - currPts[currIdx].x) + (prevPts[prevIdx].y - currPts[currIdx].y)*(prevPts[prevIdx].y - currPts[currIdx].y);
-        
-        bool minDist = (d > _minMatchDistanceSq);
-        bool maxDist = (d < _maxMatchDistanceSq);
-        bool crossRatio = (ratio < _ratioTest);
-        bool newMatch = (_matchDistance[currIdx] == -1);
-        bool betterMatch = (matches[i][0].distance < _matchDistance[currIdx]);
-        
-        if ( minDist && maxDist && crossRatio && ( newMatch || betterMatch)) {
-            //matches are not 1-1
-            if (newMatch) {
-                _prevIdx.push_back(prevIdx);
-                _currIdx.push_back(currIdx);
-                _matchedIdx[currIdx] = matchCount;
-                matchCount++;
-            }
-            else {
-                int oldIdx = _matchedIdx[currIdx];
-                _prevIdx[oldIdx] = prevIdx;
-            }
-            _matchDistance[currIdx] = matches[i][0].distance;
-        }
-    }
-    
-    //save undistorted matches from indices
-    _prevFrame.getPointsAt(_prevIdx, _prevMatch);
-    _currFrame.getPointsAt(_currIdx, _currMatch);
-    
-    if (matchCount >= _minFeatures)
-        return true;
-    
-    return false;
 }
 
 float CSfM::calculateHomographyScore(const vector<Point2f> &pts0, const vector<Point2f> &pts1, const Matx33f &H, const vector<uchar> &status, const float Th, const float Gamma) {
@@ -963,18 +390,18 @@ void CSfM::updateMotionHistory(const Matx33d &R, const Matx31d &t) {
 
 bool CSfM::addKeyFrame() {
     //at least 20 frames from last keyframe added
-    bool a = (_currFrame.getFrameNo() >= (_kFrames[_kFrames.size()-1].getFrameNo() + _newKFrameTimeLag));
+    bool a = (_tracker._currFrame.getFrameNo() >= (_kFrames[_kFrames.size()-1].getFrameNo() + _newKFrameTimeLag));
     //current frame tracks at least 50 points
-    bool b = (_currFrame.getNMatchedPoints() >= 50);
+    bool b = (_tracker._currFrame.getNMatchedPoints() >= 50);
     
     
     //current frame tracks less than 90% of points than last keyframe OR
     //there is the potential for many more matches
     int nkfPts = _kFrames[_kFrames.size()-1].getNMatchedPoints();
-    int ncurrPts = _currFrame.getNMatchedPoints();
+    int ncurrPts = _tracker._currFrame.getNMatchedPoints();
 
     bool c = (ncurrPts < 0.9*nkfPts); 
-    bool d = (_currMatch.size() - ncurrPts > 100);
+    bool d = (_tracker._currMatch.size() - ncurrPts > 100);
     
     bool addKeyFrame = (a && b && (c || d)  )  ;
     return addKeyFrame;
@@ -987,24 +414,23 @@ bool CSfM::tracking() {
     
     //(ORBSLAM 5.A)
     //detect features
-    detectFeatures();
+    _tracker.detectFeatures();
     
     //(ORBSLAM 5.B)
     //match (only stores matches in local structures)
-    matchFeatures();
-    
+    _tracker.matchFeatures();
+
     //get points with known map locations in the previous frame
     vector<int> prevMatch2DIdx, prevMatch3DIdx, currMatch2DIdx, currMatch3DIdx;
-    _prevFrame.getMatchedPoints(prevMatch2DIdx, prevMatch3DIdx);
+    _tracker._prevFrame.getMatchedPoints(prevMatch2DIdx, prevMatch3DIdx);
     
     //find those points in the current matches
-    //TODO: sub with binary find
     vector<int>::iterator idxIter;
-    for (int i = 0; i < _prevIdx.size(); i++) {
-        idxIter = find(prevMatch2DIdx.begin(), prevMatch2DIdx.end(), _prevIdx[i]);
+    for (int i = 0; i < _tracker._prevIdx.size(); i++) {
+        idxIter = lower_bound(prevMatch2DIdx.begin(), prevMatch2DIdx.end(), _tracker._prevIdx[i]);
         auto pos = idxIter - prevMatch2DIdx.begin();
-        if (idxIter != prevMatch2DIdx.end()) {
-            currMatch2DIdx.push_back(_currIdx[i]);
+        if ((idxIter != prevMatch2DIdx.end()) && (prevMatch2DIdx[pos] == _tracker._prevIdx[i])) {
+            currMatch2DIdx.push_back(_tracker._currIdx[i]);
             currMatch3DIdx.push_back(prevMatch3DIdx[pos]);
         }
     }
@@ -1014,7 +440,7 @@ bool CSfM::tracking() {
 #endif
     
     //check if we found enough points
-    if (currMatch2DIdx.size() < _minFeatures) {
+    if (currMatch2DIdx.size() < _tracker._minFeatures) {
         //increase lost frame count and check if we are actually lost
         _lostCount++;
         
@@ -1036,7 +462,7 @@ bool CSfM::tracking() {
         //get point match coordinates
         vector<Matx31d> currMatch3D; vector<Point2d> currMatch2D;
         _mapper.getPointsAtIdx(currMatch3DIdx, currMatch3D);
-        _currFrame.getPointsAt(currMatch2DIdx, currMatch2D);
+        _tracker._currFrame.getPointsAt(currMatch2DIdx, currMatch2D);
         
         //solve PnP
         int iter = 100;
@@ -1047,12 +473,12 @@ bool CSfM::tracking() {
         
         vector<int> inlierIdx;
      //   solvePnP(currMatch3D, currMatch2D, _currFrame.getIntrinsicUndistorted(), Mat::zeros(4,1,CV_64FC1), rvec, tvec,false, SOLVEPNP_ITERATIVE);
-        solvePnPRansac(currMatch3D, currMatch2D, _currFrame.getIntrinsicUndistorted(), Mat::zeros(4,1,CV_64FC1), rvec, tvec, false, iter, reprErr, confidence, inlierIdx, SOLVEPNP_EPNP );
+        solvePnPRansac(currMatch3D, currMatch2D, _tracker._currFrame.getIntrinsicUndistorted(), Mat::zeros(4,1,CV_64FC1), rvec, tvec, false, iter, reprErr, confidence, inlierIdx, SOLVEPNP_EPNP );
         
         //update pose of current frame
         Mat R;
         Rodrigues(rvec,R);
-        _currFrame.setPose(R,tvec);
+        _tracker._currFrame.setPose(R,tvec);
         
         //filter outliers
         vector<int> filt2DIdx, filt3DIdx;
@@ -1062,7 +488,7 @@ bool CSfM::tracking() {
             filt2DIdx.push_back(currMatch2DIdx[idx]);
             filt3DIdx.push_back(currMatch3DIdx[idx]);
         }
-        _currFrame.updatePoints(filt2DIdx, filt3DIdx);
+        _tracker._currFrame.updatePoints(filt2DIdx, filt3DIdx);
         
 #ifdef DEBUGINFO
         cout << "(TRACKING) PnP: removed " << currMatch2D.size() - inlierIdx.size() << " outliers" << endl;
@@ -1085,11 +511,11 @@ bool CSfM::tracking() {
             cout << "---- Keyframe added! ----" << endl;
 #endif
             //add to keyframes pool
-            int lastFrameNo = _currFrame.getFrameNo();
-            _kFrames.push_back(CKeyFrame(_currFrame));
+            int lastFrameNo = _tracker._currFrame.getFrameNo();
+            _kFrames.push_back(CKeyFrame(_tracker._currFrame));
             int lastKFrameIdx = _kFrames.size()-1;
             _kFrameIdxToFrameNo[lastKFrameIdx] = lastFrameNo;
-            _FrameNoTokFrameIdx[_currFrame.getFrameNo()] = lastKFrameIdx;
+            _FrameNoTokFrameIdx[_tracker._currFrame.getFrameNo()] = lastKFrameIdx;
             
             //update points
             vector<int> curr3DPtsIdx, curr2DPtsIdx;
@@ -1112,26 +538,26 @@ bool CSfM::tracking() {
         
         //debug show points
         vector<Matx31d> showPts3D, allPts3D; vector<int> showPts3DIdx;
-        _currFrame.getMatchedPoints(showPts3DIdx);
+        _tracker._currFrame.getMatchedPoints(showPts3DIdx);
         _mapper.getPointsAtIdx(showPts3DIdx, showPts3D);
         _mapper.getPoints(allPts3D);
         Point3d centroid = _mapper.getCentroid();
-        Mat dShow = Display2D::display3DProjections(_currFrame.getFrameGrey(), _currFrame.getIntrinsicUndistorted(), _currFrame.getRotation(), _currFrame.getTranslation(), allPts3D, 3, Scalar(0,0,255),1);
-        dShow = Display2D::display3DProjections(dShow, _currFrame.getIntrinsicUndistorted(), _currFrame.getRotation(), _currFrame.getTranslation(), showPts3D, 3, Scalar(0,255,0));
+        Mat dShow = Display2D::display3DProjections(_tracker._currFrame.getFrameGrey(), _tracker._currFrame.getIntrinsicUndistorted(), _tracker._currFrame.getRotation(), _tracker._currFrame.getTranslation(), allPts3D, 3, Scalar(0,0,255),1);
+        dShow = Display2D::display3DProjections(dShow, _tracker._currFrame.getIntrinsicUndistorted(), _tracker._currFrame.getRotation(), _tracker._currFrame.getTranslation(), showPts3D, 3, Scalar(0,255,0));
         //_vOut << dShow;
         imshow("Debug",dShow);
         waitKey(1);
         
         //swap buffers between current and previous frame
-        _prevFrame = _currFrame;
+        swap(_tracker._prevFrame,_tracker._currFrame);
     }
     
     return success;
 }
 
 void CSfM::findMapPointsInCurrentFrame() {
-    Matx34d P = _currFrame.getProjectionMatrix();
-    Matx33d K = _currFrame.getIntrinsicUndistorted();
+    Matx34d P = _tracker._currFrame.getProjectionMatrix();
+    Matx33d K = _tracker._currFrame.getIntrinsicUndistorted();
     
     //find keyframes connected in covisibility graph
     int refKno = _kFrames[_kFrames.size()-1].getFrameNo();
@@ -1142,7 +568,7 @@ void CSfM::findMapPointsInCurrentFrame() {
     //get all unmatched 3d points visible from covisible frames
     vector<int> covisiblePts3DIdx, existingPts3DIdx;
     _mapper.getPointsInFrames(covisiblePts3DIdx, covisibleFrameIdx);
-    _currFrame.getMatchedPoints(existingPts3DIdx);
+    _tracker._currFrame.getMatchedPoints(existingPts3DIdx);
     sort(covisiblePts3DIdx.begin(), covisiblePts3DIdx.end());
     sort(existingPts3DIdx.begin(), existingPts3DIdx.end());
     
@@ -1154,8 +580,8 @@ void CSfM::findMapPointsInCurrentFrame() {
     vector<int> unmatchedPts2DIdx;
     vector<Point2d> unmatchedPts2D;
     Mat unmatchedDesc;
-    _currFrame.getUnmatchedPoints(unmatchedPts2D, unmatchedPts2DIdx);
-    _currFrame.getDescriptorsAt(unmatchedPts2DIdx, unmatchedDesc);
+    _tracker._currFrame.getUnmatchedPoints(unmatchedPts2D, unmatchedPts2DIdx);
+    _tracker._currFrame.getDescriptorsAt(unmatchedPts2DIdx, unmatchedDesc);
     
     //match descriptors
     vector<Matx31d> newPts3D;
@@ -1166,7 +592,7 @@ void CSfM::findMapPointsInCurrentFrame() {
     GeometryUtils::projectPoints(P, K, newPts3D, newPts2D);
     
     vector<int> matchMapIdx, matchFrameIdx;
-    matchFeatures(newPts2D, newPtsDesc, unmatchedPts2D, unmatchedDesc, matchMapIdx, matchFrameIdx, 0, 1.5*_maxReprErr);
+    _tracker.matchFeatures(newPts2D, newPtsDesc, unmatchedPts2D, unmatchedDesc, matchMapIdx, matchFrameIdx, 0, 1.5*_maxReprErr);
     
     //get matched 3d points index and update frame
     vector<int> match3DIdx, match2DIdx;
@@ -1177,7 +603,7 @@ void CSfM::findMapPointsInCurrentFrame() {
         idx = matchFrameIdx[i];
         match2DIdx.push_back(unmatchedPts2DIdx[idx]);
     }
-    _currFrame.updatePoints(match2DIdx, match3DIdx);
+    _tracker._currFrame.updatePoints(match2DIdx, match3DIdx);
     
 #ifdef DEBUGINFO
     cout << "(TRACKING) Found additional " << matchMapIdx.size() << " points from map" << endl;
@@ -1217,7 +643,7 @@ void CSfM::findMapPointsInFrame(int frameNo) {
     _mapper.getRepresentativeDescriptors(pts3DIdx, ptsDescriptors);
     GeometryUtils::projectPoints(P, K, pts3D, pts2D);
     pts2DFrame = _kFrames[kIdx].getPoints();
-    matchFeatures(pts2D, ptsDescriptors,pts2DFrame,_kFrames[kIdx].getDescriptors(), matchMapPtsIdx, matchFramePtsIdx, 0, _maxReprErr);
+    _tracker.matchFeatures(pts2D, ptsDescriptors,pts2DFrame,_kFrames[kIdx].getDescriptors(), matchMapPtsIdx, matchFramePtsIdx, 0, _maxReprErr);
     
     //get original 3d point indices
     vector<int> match3DPtsIdx;
@@ -1263,8 +689,8 @@ int CSfM::cullMapPoints() {
     for (int i = 0; i < _kFrames.size(); i++) {
         _kFrames[i].cullPoints(newPtsIdx);
     }
-    _prevFrame.cullPoints(newPtsIdx);
-    _currFrame.cullPoints(newPtsIdx);
+    _tracker._prevFrame.cullPoints(newPtsIdx);
+    _tracker._currFrame.cullPoints(newPtsIdx);
     
     return cullIdx.size();
 }
@@ -1354,4 +780,202 @@ void CSfM::stopVideoOutput() {
 
 void CSfM::getReconstruction(vector<Matx31d> &volume, vector<Vec3i> &colour) {
     _mapper.getPoints(volume);
+}
+
+bool CSfM::init() {
+    
+    //bool success = detectFeaturesOpticalFlow();
+    bool success = _tracker.detectFeatures();
+    
+    //if features are detected
+    if (success) {
+        //if this is the first frame
+        if (_kFrames.size() == 0) {
+            CKeyFrame firstFrame(_tracker._currFrame);
+            _kFrames.push_back(firstFrame);
+            _kFrames[0].setPose();
+            _kFrameIdxToFrameNo[0] = _tracker._currFrame.getFrameNo();
+            _FrameNoTokFrameIdx[_tracker._currFrame.getFrameNo()] = 0;
+            
+            //swap buffers
+            swap(_tracker._prevFrame, _tracker._currFrame);
+            return true;
+        }
+        else {
+            
+            bool enoughFeaturesFound = _tracker.matchFeatures();
+            //bool enoughFeaturesFound = computeOpticalFlow();
+            
+            if (!enoughFeaturesFound) {
+                //reset frames
+                //_kFrames.pop_back();
+                //CKeyFrame firstFrame(_currFrame);
+                //_kFrames.push_back(firstFrame);
+#ifdef DEBUGINFO
+                cout << "Not enough features found" << endl;
+#endif
+            }
+            else {
+                
+                //find homography and fundamental matrix
+                //DO NOT USE RANSAC for the following reasons:
+                //1. matching correctness is ensured by optical flow (filtering is at the detector/matcher stage, not at the tracking stage)
+                //2. unless the points are uniformely distributed it is possible to select a set that lies on the same plane, which yields an incorrect result
+                vector<uchar> Hmask, Fmask;
+                Matx33f H = findHomography( _tracker._prevMatch, _tracker._currMatch, 0, 5.99, Hmask);
+                Matx33f F = findFundamentalMat(_tracker._prevMatch, _tracker._currMatch, CV_FM_RANSAC, 3.84,0.99, Fmask);
+                
+                if (!Mat(H).empty() || !Mat(F).empty()) {
+                    Matx33d R_init;
+                    Vec3d t_init;
+                    
+                    float s_h = calculateHomographyScore(_tracker._prevMatch, _tracker._currMatch, H, Hmask, 5.99, 5.99);
+                    float s_f = calculateFundamentalScore(_tracker._prevMatch, _tracker._currMatch, F, Fmask, 3.84, 5.99);
+                    
+                    //get intrinsic matrices
+                    Matx33f K0 = _kFrames[0].getIntrinsicUndistorted();
+                    Matx33f K1 = _tracker._currFrame.getIntrinsicUndistorted();
+                    
+                    //choose best model
+                    double r_h = s_h / (s_h + s_f);
+                    bool canInit = false;
+                    if (r_h > 1) {
+                        //choose homography
+#ifdef DEBUGINFO
+                        
+                        cout << "Homography initialization" << endl;
+#endif
+                        
+                        //filter outliers
+                        filterMatches(Hmask);
+                        
+                        
+                        //calculate reprojection error
+                        double errHomo = GeometryUtils::calculateHomographyAvgError(_tracker._prevMatch, _tracker._currMatch, H);
+                        
+                        //find decomposition
+                        bool canDecompose = GeometryUtils::RtFromHomographyMatrix(H, K0, K1, _tracker._prevMatch, _tracker._currMatch, R_init, t_init);
+#ifdef DEBUGINFO
+                        if (errHomo >= _maxReprErr)
+                            cout << "Homography transfer error too large" << endl;
+#endif
+                        
+                        if (canDecompose && (errHomo < _maxReprErr)) {
+                            canInit = true;
+                        }
+                        
+                    }
+                    else {
+                        //choose fundamental matrix
+#ifdef DEBUGINFO
+                        cout << "Fundamental matrix initialization" << endl;
+#endif
+                        //remove outliers
+                        filterMatches(Fmask);
+                        
+                        //find reprojection error on epilines
+                        double errFund = GeometryUtils::calculateFundamentalAvgError(_tracker._prevMatch, _tracker._currMatch, F);
+                        
+                        //essential matrix
+                        Matx33f E = K0.t()*F*K1;
+                        //decompose essential
+                        bool canDecompose = GeometryUtils::RtFromEssentialMatrix(E, K0, K1, _tracker._prevMatch, _tracker._currMatch, R_init, t_init);
+#ifdef DEBUGINFO
+                        if (errFund >= _maxReprErr)
+                            cout << "Symmetric transfer error too large" << endl;
+#endif
+                        if (canDecompose && (errFund < _maxReprErr)) {
+                            
+                            canInit = true;
+                        }
+                    }
+                    
+                    
+                    if (canInit) {
+                        
+                        //set pose information
+                        _tracker._currFrame.setPose(R_init,t_init);
+                        
+                        //triangulate points
+                        vector<Matx31d> pts3D;
+                        GeometryUtils::triangulatePoints(_kFrames[0].getProjectionMatrix(), _tracker._currFrame.getProjectionMatrix(), K0, K1, _tracker._prevMatch, _tracker._currMatch, pts3D);
+                        
+                        //remove outliers
+                        vector<uchar> status;
+                        int nRemoved = GeometryUtils::filterMatches(F, _tracker._prevMatch, _tracker._currMatch, pts3D, status, _maxReprErr);
+#ifdef DEBUGINFO
+                        cout << "Removed " << nRemoved << " outliers" << endl;
+#endif
+                        vector<int> tPrevIdx, tCurrIdx;
+                        vector<Point2f> tPrevMatch, tCurrMatch;
+                        vector<Matx31d> filt3D;
+                        tPrevIdx.reserve(_tracker._prevIdx.size() - nRemoved);
+                        tCurrIdx.reserve(_tracker._currIdx.size() - nRemoved);
+                        tPrevMatch.reserve(_tracker._prevMatch.size() - nRemoved);
+                        tCurrMatch.reserve(_tracker._currMatch.size() - nRemoved);
+                        filt3D.reserve(_tracker._currMatch.size() - nRemoved);
+                        for (int i = 0; i < status.size(); i++) {
+                            if (status[i] == 1) {
+                                tPrevIdx.push_back(_tracker._prevIdx[i]);
+                                tCurrIdx.push_back(_tracker._currIdx[i]);
+                                tPrevMatch.push_back(_tracker._prevMatch[i]);
+                                tCurrMatch.push_back(_tracker._currMatch[i]);
+                                filt3D.push_back(pts3D[i]);
+                            }
+                        }
+                        swap(_tracker._prevIdx,tPrevIdx);
+                        swap(_tracker._currIdx, tCurrIdx);
+                        swap(_tracker._prevMatch, tPrevMatch);
+                        swap(_tracker._currMatch, tCurrMatch);
+                        
+                        //update map and frames
+                        vector<int> pts3DIdx;
+                        _mapper.addNewPoints(filt3D,vector<vector<int>>{_tracker._prevIdx,_tracker._currIdx}, vector<int>{_kFrames[0].getFrameNo(),_tracker._currFrame.getFrameNo()},pts3DIdx);
+                        
+                        _kFrames[0].updatePoints(_tracker._prevMatch,_tracker._prevIdx,pts3DIdx);
+                        _tracker._currFrame.updatePoints(_tracker._currMatch,_tracker._currIdx,pts3DIdx);
+                        
+                        //bundle adjustment of both structure and pose
+                        bundleAdjustment(vector<int>{_kFrames[0].getFrameNo(),_tracker._currFrame.getFrameNo()},CTracker::BA_TYPE::STRUCT_AND_POSE);
+                        
+                        //add descriptors
+                        Mat prevDescriptors, currDescriptors;
+                        _kFrames[0].getDescriptorsAt(_tracker._prevIdx, prevDescriptors);
+                        _tracker._currFrame.getDescriptorsAt(_tracker._currIdx, currDescriptors);
+                        _mapper.addDescriptors(pts3DIdx, prevDescriptors);
+                        _mapper.addDescriptors(pts3DIdx, currDescriptors);
+                        
+                        //add second frame to keyframe list
+                        _kFrames.push_back(CKeyFrame(_tracker._currFrame));
+                        _kFrameIdxToFrameNo[1] = _tracker._currFrame.getFrameNo();
+                        _FrameNoTokFrameIdx[_tracker._currFrame.getFrameNo()] = 1;
+                        
+#ifdef DEBUGINFO
+                        cout << "# Features triangulated in frame 0: " << _kFrames[0].getNMatchedPoints() << endl;
+                        cout << "# Features triangulated in frame 1: " << _kFrames[1].getNMatchedPoints() << endl;
+#endif
+                        
+                        //change state
+                        _tracker._minMatchDistance = 0;
+                        _state = RUNNING;
+                        swap(_tracker._prevFrame,_tracker._currFrame);
+                        return true;
+                    }
+                    else {
+                        //pop frame and start again
+                        //_kFrames.pop_back();
+                        //_currFrame = _prevFrame;
+                    }
+                } //computed valid fundamental and homography matrix
+                
+            }//match found
+            
+        } //second frame processed
+        
+    } //not enough features detected
+    
+    //if enough time has passed, swap buffers to avoid remaining stuck with the first frame
+    if (_tracker._currFrame.getFrameNo() >= _tracker._prevFrame.getFrameNo() + _newKFrameTimeLag)
+       swap(_tracker._prevFrame,_tracker._currFrame);
+    return false;
 }
