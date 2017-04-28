@@ -24,7 +24,7 @@
 #include <stdlib.h>
 #include <opencv2/opencv.hpp>
 #include "Eigen/Dense"
-#include "CSfM.h"
+#include "../CSfM.h"
 #include "../../STLReader/CSTLReader.hpp"
 
 using namespace cv;
@@ -70,7 +70,7 @@ int main(int argc, const char * argv[]) {
     Mat firstFrame, frameIn;
     for (int i = 0; i < 350; i++) {
 #ifdef DEBUGINFO
-        //cout << "Frame " << i << endl;
+        cout << "Frame " << i << endl;
 #endif
         videoIn >> frameIn;
         
@@ -85,7 +85,7 @@ int main(int argc, const char * argv[]) {
 #ifdef DEBUGINFO
 //    sfm.stopVideoOutput();
 #endif
-    
+  
     //output 3d object
     cout << "Outputting 3D volume..." << endl;
     vector<Matx31d> volume;

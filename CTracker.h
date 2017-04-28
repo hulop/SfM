@@ -87,10 +87,6 @@ private:
     vector<Point2f> _prevMatch;
     vector<Point2f> _currMatch;
     
-    vector<int> _matchStatus;
-    vector<float> _matchDistance;
-    vector<int> _matchedIdx;
-    
     vector<int> _prevIdx;
     vector<int> _currIdx;
     

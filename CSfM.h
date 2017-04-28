@@ -68,7 +68,6 @@ private:
     int cullMapPoints();
     int cullKeyFrames(double thresholdRate = 0.9);
     
-    void findMapPointsInFrame(int frameNo);
     void findMapPointsInCurrentFrame();
     void updateMotionHistory(const Matx33d &R, const Matx31d &t);
     void updateMapAndFrame(int frameNo, const vector<int> &pts3DIdx, const vector<int> &pts2DIdx);
@@ -108,30 +107,13 @@ private:
     Matx31d _tpred;
     int _motionHistoryLength;
     
-    //feature detection and matching
-    //Ptr<FeatureDetector> _detector;
-    //Ptr<DescriptorExtractor> _descriptor;
-    //brisk::BruteForceMatcher _matcher;
-    
-    //CFrame _currFrame;
-    //CFrame _prevFrame;
-//    vector<Point2f> _prevMatch;
-//    vector<Point2f> _currMatch;
-//    
-//    vector<int> _matchStatus;
-//    vector<float> _matchDistance;
-//    vector<int> _matchedIdx;
-//    
-//    vector<int> _prevIdx;
-//    vector<int> _currIdx;
-    
     //output video
     VideoWriter _vOut;
     
     //lookup table for keyframe index to frame number
     unordered_map<int,int> _kFrameIdxToFrameNo;
     unordered_map<int,int> _FrameNoTokFrameIdx;
-    
+
     //signals
     bool _keyFrameAdded;
 };

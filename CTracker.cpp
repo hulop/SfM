@@ -53,10 +53,8 @@ CTracker::~CTracker() {
 void CTracker::matchFeaturesRadius(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1) {
     
     vector<vector<DMatch>> matches;
-    vector<double> matchDistance;
-    vector<int> matchedIdx;
-    matchDistance.assign(pts1.size(), -1);
-    matchedIdx.assign(pts1.size(),-1);
+    vector<double> matchDistance(pts1.size(), -1);
+    vector<int> matchedIdx(pts1.size(), -1);
     
     int matchCount = 0;
     
@@ -114,10 +112,8 @@ void CTracker::matchFeatures(const vector<Point2d> &pts0, const Mat &desc0, cons
     vector<vector<DMatch>> matches;
     
     _matcher.knnMatch(desc0, desc1, matches, 2);
-    vector<double> matchDistance;
-    vector<int> matchedIdx;
-    matchDistance.assign(pts1.size(), -1);
-    matchedIdx.assign(pts1.size(),-1);
+    vector<double> matchDistance(pts1.size(), -1);
+    vector<int> matchedIdx(pts1.size(), -1);
     
     int matchCount = 0;
     for (int i = 0; i < matches.size(); i++) {
@@ -145,10 +141,9 @@ void CTracker::matchFeatures(const vector<Point2d> &pts0, const Mat &desc0, cons
 void CTracker::matchFeaturesRadius(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1, double minDistance, double maxDistance) {
     
     vector<vector<DMatch>> matches;
-    vector<double> matchDistance;
-    vector<int> matchedIdx;
-    matchDistance.assign(pts1.size(), -1);
-    matchedIdx.assign(pts1.size(),-1);
+    vector<double> matchDistance(pts1.size(), -1);
+    vector<int> matchedIdx(pts1.size(), -1);
+   
     double minDistanceSq = minDistance*minDistance;
     double maxDistanceSq = maxDistance*maxDistance;
     int matchCount = 0;
@@ -207,10 +202,8 @@ void CTracker::matchFeatures(const vector<Point2d> &pts0, const Mat &desc0, cons
     vector<vector<DMatch>> matches;
     
     _matcher.knnMatch(desc0, desc1, matches, 2);
-    vector<double> matchDistance;
-    vector<int> matchedIdx;
-    matchDistance.assign(pts1.size(), -1);
-    matchedIdx.assign(pts1.size(),-1);
+    vector<double> matchDistance(pts1.size(), -1);
+    vector<int> matchedIdx(pts1.size(), -1);
     
     double minDistanceSq = minDistance*minDistance;
     double maxDistanceSq = maxDistance*maxDistance;
@@ -292,8 +285,8 @@ bool CTracker::matchFeaturesRadius() {
     
     //match candidates within radius
     int matchCount = 0;
-    _matchDistance.assign(currPts.size(), -1);
-    _matchedIdx.assign(currPts.size(),-1);
+    vector<double> matchDistance(currPts.size(), -1);
+    vector<int> matchedIdx(currPts.size(),-1);
     for (int i = 0; i < prevPts.size(); i++) {
         Point2d prevPt = prevPts[i];
         
@@ -307,7 +300,7 @@ bool CTracker::matchFeaturesRadius() {
             if ((dSq < _maxMatchDistanceSq) && (dSq > _minMatchDistanceSq)) {
                 //calculate hamming distance and check that is below the threshold and better than any other existing matches
                 double ham = norm(prevDesc.row(i),currDesc.row(j),NORM_HAMMING);
-                if ((ham < _maxHammingDistance) && ((ham < _matchDistance[j]) || (_matchDistance[j] == -1))) {
+                if ((ham < _maxHammingDistance) && ((ham < matchDistance[j]) || (matchDistance[j] == -1))) {
                     candMatchIdx.push_back(j);
                     candMatchDist.push_back(ham);
                 }
@@ -329,16 +322,16 @@ bool CTracker::matchFeaturesRadius() {
             
             //find best candidate and save
             if (idx != -1) {
-                if (_matchDistance[idx] == -1) {
+                if (matchDistance[idx] == -1) {
                     _prevIdx.push_back(i);
                     _currIdx.push_back(idx);
-                    _matchedIdx[idx] = matchCount;
+                    matchedIdx[idx] = matchCount;
                     matchCount++;
                 } else {
-                    int oldIdx = _matchedIdx[idx];
+                    int oldIdx = matchedIdx[idx];
                     _prevIdx[oldIdx] = i;
                 }
-                _matchDistance[idx] = candMatchDist[0];
+                matchDistance[idx] = candMatchDist[0];
             }
         }
     }
@@ -363,13 +356,13 @@ bool CTracker::matchFeatures() {
     
     //get keypoints
     vector<Point2d> prevPts, currPts;
-    Mat(_prevFrame.getPointsDistorted()).copyTo(prevPts);
-    Mat(_currFrame.getPointsDistorted()).copyTo(currPts);
+    prevPts = _prevFrame.getPointsDistorted();
+    currPts = _currFrame.getPointsDistorted();
     
     //match closest 2 candidates
     _matcher.knnMatch(_prevFrame.getDescriptors(), _currFrame.getDescriptors(), matches, 2);
-    _matchDistance.assign(currPts.size(), -1);
-    _matchedIdx.assign(currPts.size(),-1);
+    vector<double> matchDistance(currPts.size(), -1);
+    vector<int> matchedIdx(currPts.size(),-1);
     
     //TODO: worth doing Fwd/Bwd test?
     _prevIdx.reserve(matches.size());
@@ -384,22 +377,22 @@ bool CTracker::matchFeatures() {
         bool minDist = (d > _minMatchDistanceSq);
         bool maxDist = (d < _maxMatchDistanceSq);
         bool crossRatio = (ratio < _ratioTest);
-        bool newMatch = (_matchDistance[currIdx] == -1);
-        bool betterMatch = (matches[i][0].distance < _matchDistance[currIdx]);
+        bool newMatch = (matchDistance[currIdx] == -1);
+        bool betterMatch = (matches[i][0].distance < matchDistance[currIdx]);
         
         if ( minDist && maxDist && crossRatio && ( newMatch || betterMatch)) {
             //matches are not 1-1
             if (newMatch) {
                 _prevIdx.push_back(prevIdx);
                 _currIdx.push_back(currIdx);
-                _matchedIdx[currIdx] = matchCount;
+                matchedIdx[currIdx] = matchCount;
                 matchCount++;
             }
             else {
-                int oldIdx = _matchedIdx[currIdx];
+                int oldIdx = matchedIdx[currIdx];
                 _prevIdx[oldIdx] = prevIdx;
             }
-            _matchDistance[currIdx] = matches[i][0].distance;
+            matchDistance[currIdx] = matches[i][0].distance;
         }
     }
     
@@ -434,9 +427,9 @@ bool CTracker::computeOpticalFlow() {
     Mat(_prevFrame.getPointsDistorted()).copyTo(prevPts);
     vector<Point2f> currMatch, currDetectedPoints;
     Mat(_currFrame.getPointsDistorted()).copyTo(currDetectedPoints);
-    _matchDistance.assign(currDetectedPoints.size(), -1);
-    _matchStatus.assign(currDetectedPoints.size(), 0);
-    _matchedIdx.assign(currDetectedPoints.size(), -1);
+    vector<double> matchDistance(currDetectedPoints.size(), -1);
+    vector<bool> matchStatus(currDetectedPoints.size());
+    vector<int> matchedIdx(currDetectedPoints.size(), -1);
     
     //predict motion of points
     //predictFlow(currPts);
@@ -459,24 +452,24 @@ bool CTracker::computeOpticalFlow() {
             float e = (currPts[i].x - currDetectedPoints[idx].x)*(currPts[i].x - currDetectedPoints[idx].x) + (currPts[i].y - currDetectedPoints[idx].y)*(currPts[i].y - currDetectedPoints[idx].y);
             float d = (prevPts[i].x - currPts[i].x)*(prevPts[i].x - currPts[i].x) + (prevPts[i].y - currPts[i].y)*(prevPts[i].y - currPts[i].y);
             
-            if ((d < maxDistSq) && (e < maxFeatDistSq) && (d > minDistSq) && ((_matchDistance[idx] >= e) || (_matchDistance[idx] == -1)) ) {
+            if ((d < maxDistSq) && (e < maxFeatDistSq) && (d > minDistSq) && ((matchDistance[idx] >= e) || (matchDistance[idx] == -1)) ) {
                 
                 //check if point was already matched
-                if (_matchStatus[idx] == 1) {
+                if (matchStatus[idx] == true) {
                     //overwrite previous match since the one found is better
-                    const int oldIdx = _matchedIdx[idx];
+                    const int oldIdx = matchedIdx[idx];
                     _prevIdx[oldIdx] = i;
                 } else {
                     //save indices in CFrame arrays
                     _prevIdx.push_back(i);
                     _currIdx.push_back(idx);
                     
-                    _matchStatus[idx] = 1;
-                    _matchedIdx[idx] = matchCount;
+                    matchStatus[idx] = true;
+                    matchedIdx[idx] = matchCount;
                     matchCount++;
                 }
                 
-                _matchDistance[idx] = e;
+                matchDistance[idx] = e;
             }
         }
     }

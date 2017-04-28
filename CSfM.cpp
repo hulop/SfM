@@ -22,13 +22,9 @@
 
 #include "CSfM.h"
 
-CSfM::CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d) : _tracker(K,d,imSize)  {
+CSfM::CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d) : _tracker(K,d,imSize)
+{
     _state = NOT_INITIALIZED;
-    
-//    //initialise detector and descriptor
-//    _detector = new brisk::BriskFeatureDetector(60,6,true);
-//    bool rotInvariant = true, scaleInvariant = true;
-//    _descriptor = new brisk::BriskDescriptorExtractor(rotInvariant,scaleInvariant,brisk::BriskDescriptorExtractor::Version::briskV2);
     
  
     _maxReprErr = 7; //maximum average reprojection/transfer error
@@ -67,30 +63,16 @@ void CSfM::addFrame(cv::Mat frameIn) {
     
     bool success;
     int nCulledPts;
-    chrono::time_point<chrono::steady_clock> startT;
-    chrono::time_point<chrono::steady_clock> endT;
-    chrono::duration<double,std::milli> duration;
+    
     switch (_state) {
         case NOT_INITIALIZED:
             success = init();
             break;
         case RUNNING:
-            startT = chrono::steady_clock::now();
             success = tracking();
-            endT = chrono::steady_clock::now();
-            duration = chrono::duration_cast<chrono::milliseconds>(endT - startT);
-            cout << "Tracking: " << duration.count() << endl;
             if (_keyFrameAdded) {
-                startT = chrono::steady_clock::now();
                 mapping();
-                endT = chrono::steady_clock::now();
-                duration = chrono::duration_cast<chrono::milliseconds>(endT - startT);
-                cout << "Mapping: " << duration.count() << endl;
             }
-
-#ifdef DEBUGINFO
-         //   cout << "Culled " << nCulledPts << " map points" << endl;
-#endif
             break;
         case LOST:
             success = recovery();
@@ -99,6 +81,16 @@ void CSfM::addFrame(cv::Mat frameIn) {
             break;
     }
 
+    //debug show points
+    vector<Matx31d> showPts3D, allPts3D; vector<int> showPts3DIdx;
+    _tracker._prevFrame.getMatchedPoints(showPts3DIdx);
+    _mapper.getPointsAtIdx(showPts3DIdx, showPts3D);
+    _mapper.getPoints(allPts3D);
+    Mat dShow = Display2D::display3DProjections(_tracker._prevFrame.getFrameGrey(), _tracker._prevFrame.getIntrinsicUndistorted(), _tracker._prevFrame.getRotation(), _tracker._prevFrame.getTranslation(), allPts3D, 3, Scalar(0,0,255),1);
+    dShow = Display2D::display3DProjections(dShow, _tracker._prevFrame.getIntrinsicUndistorted(), _tracker._prevFrame.getRotation(), _tracker._prevFrame.getTranslation(), showPts3D, 3, Scalar(0,255,0));
+    //_vOut << dShow;
+    imshow("Debug",dShow);
+    waitKey(1);
 
     _frameCount++;
 }
@@ -401,7 +393,7 @@ bool CSfM::addKeyFrame() {
     int ncurrPts = _tracker._currFrame.getNMatchedPoints();
 
     bool c = (ncurrPts < 0.9*nkfPts); 
-    bool d = (_tracker._currMatch.size() - ncurrPts > 100);
+    bool d = false;//(_tracker._currMatch.size() - ncurrPts > 100);
     
     bool addKeyFrame = (a && b && (c || d)  )  ;
     return addKeyFrame;
@@ -436,7 +428,7 @@ bool CSfM::tracking() {
     }
 
 #ifdef DEBUGINFO
-    cout << "(TRACKING) Found map points: " << currMatch2DIdx.size() << endl;
+    cout << "(TRACKING) Found map points: " << currMatch2DIdx.size() << " out of " << _tracker._currIdx.size() << " matches" << endl;
 #endif
     
     //check if we found enough points
@@ -465,14 +457,13 @@ bool CSfM::tracking() {
         _tracker._currFrame.getPointsAt(currMatch2DIdx, currMatch2D);
         
         //solve PnP
-        int iter = 100;
+        int iter = 20;
         double confidence = 0.99;
         double reprErr = _maxReprErr;
         Mat rvec = Mat::zeros(3,1,CV_64FC1);
         Mat tvec = Mat::zeros(3,1,CV_64FC1);
         
         vector<int> inlierIdx;
-     //   solvePnP(currMatch3D, currMatch2D, _currFrame.getIntrinsicUndistorted(), Mat::zeros(4,1,CV_64FC1), rvec, tvec,false, SOLVEPNP_ITERATIVE);
         solvePnPRansac(currMatch3D, currMatch2D, _tracker._currFrame.getIntrinsicUndistorted(), Mat::zeros(4,1,CV_64FC1), rvec, tvec, false, iter, reprErr, confidence, inlierIdx, SOLVEPNP_EPNP );
         
         //update pose of current frame
@@ -536,18 +527,6 @@ bool CSfM::tracking() {
             updateMotionHistory(R, tvec);
         }
         
-        //debug show points
-        vector<Matx31d> showPts3D, allPts3D; vector<int> showPts3DIdx;
-        _tracker._currFrame.getMatchedPoints(showPts3DIdx);
-        _mapper.getPointsAtIdx(showPts3DIdx, showPts3D);
-        _mapper.getPoints(allPts3D);
-        Point3d centroid = _mapper.getCentroid();
-        Mat dShow = Display2D::display3DProjections(_tracker._currFrame.getFrameGrey(), _tracker._currFrame.getIntrinsicUndistorted(), _tracker._currFrame.getRotation(), _tracker._currFrame.getTranslation(), allPts3D, 3, Scalar(0,0,255),1);
-        dShow = Display2D::display3DProjections(dShow, _tracker._currFrame.getIntrinsicUndistorted(), _tracker._currFrame.getRotation(), _tracker._currFrame.getTranslation(), showPts3D, 3, Scalar(0,255,0));
-        //_vOut << dShow;
-        imshow("Debug",dShow);
-        waitKey(1);
-        
         //swap buffers between current and previous frame
         swap(_tracker._prevFrame,_tracker._currFrame);
     }
@@ -608,76 +587,6 @@ void CSfM::findMapPointsInCurrentFrame() {
 #ifdef DEBUGINFO
     cout << "(TRACKING) Found additional " << matchMapIdx.size() << " points from map" << endl;
 #endif
-}
-
-void CSfM::findMapPointsInFrame(int frameNo) {
-    //project map on current frame and check if there are other point correspondences
-    //(THIS CAN BE DONE IN A SEPARATE THREAD):
-    int kIdx = _FrameNoTokFrameIdx[frameNo];
-    Matx34d P = _kFrames[kIdx].getProjectionMatrix();
-    Matx33d K = _kFrames[kIdx].getIntrinsicUndistorted();
-    
-    //1. find frames connected in covisibility graph
-    int covisibilityStrengthThreshold = 50;
-    vector<int> covisibleFrameIdx;
-    _mapper.getFramesConnectedToFrame(frameNo, covisibleFrameIdx, covisibilityStrengthThreshold);
-    
-    //2. get all unmatched 3d points visible from covisible frames
-    vector<int> covisiblePts3DIdx, existingPts3DIdx;
-    _mapper.getPointsInFrames(covisiblePts3DIdx, covisibleFrameIdx);
-    _mapper.getPointsInFrame(existingPts3DIdx, frameNo);
-    sort(covisiblePts3DIdx.begin(),covisiblePts3DIdx.end());
-    sort(existingPts3DIdx.begin(),existingPts3DIdx.end());
-    
-    vector<int> pts3DIdx(covisiblePts3DIdx.size());
-    vector<int>::iterator pt3DIt = set_difference(covisiblePts3DIdx.begin(),covisiblePts3DIdx.end(),existingPts3DIdx.begin(),existingPts3DIdx.end(),pts3DIdx.begin());
-    pts3DIdx.resize(pt3DIt - pts3DIdx.begin());
-    
-    //3. match descriptors
-    vector<Matx31d> pts3D;
-    vector<Point2d> pts2D, pts2DFrame;
-    Mat ptsDescriptors;
-    vector<int> matchMapPtsIdx, matchFramePtsIdx;
-    
-    _mapper.getPointsAtIdx(pts3DIdx, pts3D);
-    _mapper.getRepresentativeDescriptors(pts3DIdx, ptsDescriptors);
-    GeometryUtils::projectPoints(P, K, pts3D, pts2D);
-    pts2DFrame = _kFrames[kIdx].getPoints();
-    _tracker.matchFeatures(pts2D, ptsDescriptors,pts2DFrame,_kFrames[kIdx].getDescriptors(), matchMapPtsIdx, matchFramePtsIdx, 0, _maxReprErr);
-    
-    //get original 3d point indices
-    vector<int> match3DPtsIdx;
-    vector<Matx31d> match3DPts;
-    vector<Point2d> match2DPts;
-    for (int i = 0; i < matchMapPtsIdx.size(); i++) {
-        int idxMap = matchMapPtsIdx[i];
-        int idxFrame = matchFramePtsIdx[i];
-        match3DPtsIdx.push_back(pts3DIdx[idxMap]);
-        match3DPts.push_back(pts3D[idxMap]);
-        match2DPts.push_back(pts2DFrame[idxFrame]);
-    }
-    
-    //4. filter outliers
-    vector<uchar> status;
-    vector<int> filtered3DIdx, filtered2DIdx;
-    int nOutliers = GeometryUtils::filterOutliers(P, K, _kFrames[kIdx].getImageSize(), match3DPts, match2DPts, status);
-#ifdef DEBUGINFO
-    cout << "Removed " << nOutliers << " outliers" << endl;
-#endif
-    
-    for (int i = 0; i < status.size(); i++) {
-        if (status[i] == 1) {
-            filtered3DIdx.push_back(match3DPtsIdx[i]);
-            filtered2DIdx.push_back(matchFramePtsIdx[i]);
-        }
-    }
-    
-#ifdef DEBUGINFO
-    cout << "Found additional " << filtered2DIdx.size() << " points from map" << endl;
-#endif
-    
-    //5. update map and frame references
-    updateMapAndFrame(frameNo, filtered3DIdx, filtered2DIdx);
 }
 
 int CSfM::cullMapPoints() {
