@@ -30,7 +30,7 @@ CSfM::CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d) : _tra
     _maxReprErr = 7; //maximum average reprojection/transfer error
 
     _lostCount = 0;
-    _minCovisibilityStrength = 50; //how many points are covisible between frames for bundle adjustment to proceed
+    _minCovisibilityStrength = 0; //how many points are covisible between frames for bundle adjustment to proceed
     _maxLost = 10; //how many frames can be processed before declaring loss of track
     _frameCount = 0; //frame counter
     _motionHistoryLength = 2; //how many frames should you remember the pose for depending on how complicated the motion model is
@@ -218,6 +218,7 @@ bool CSfM::mapping() {
     cout << "(MAPPER) Found matches for " << count << " new map points" << endl;
 #endif
     
+    
     // ORBSLAM 6.B.
     // Recent map points culling
     int cullMapCount = cullMapPoints();
@@ -229,15 +230,16 @@ bool CSfM::mapping() {
     // ORBSLAM 6.D.
     // Local BA
     connectedKFNo.push_back(lastKFNo);
-    bundleAdjustment(connectedKFNo,CTracker::BA_TYPE::STRUCT_AND_POSE);
+    bundleAdjustment(connectedKFNo,CTracker::BA_TYPE::POSE_ONLY);
     
     // ORBSLAM 6.E.
     // Local KF culling
     int cullFrameCount = cullKeyFrames();
 #ifdef DEBUGINFO
-    cout << "(MAPPER Culled " << cullFrameCount << " key frames" << endl;
+    cout << "(MAPPER) Culled " << cullFrameCount << " key frames" << endl;
 #endif
     
+    _mapper.incrementMapAge(0,1);
     _keyFrameAdded = false;
     
     return success;
@@ -409,23 +411,16 @@ bool CSfM::tracking() {
     _tracker.detectFeatures();
     
     //(ORBSLAM 5.B)
-    //match (only stores matches in local structures)
-    _tracker.matchFeatures();
-
-    //get points with known map locations in the previous frame
-    vector<int> prevMatch2DIdx, prevMatch3DIdx, currMatch2DIdx, currMatch3DIdx;
-    _tracker._prevFrame.getMatchedPoints(prevMatch2DIdx, prevMatch3DIdx);
-    
-    //find those points in the current matches
-    vector<int>::iterator idxIter;
-    for (int i = 0; i < _tracker._prevIdx.size(); i++) {
-        idxIter = lower_bound(prevMatch2DIdx.begin(), prevMatch2DIdx.end(), _tracker._prevIdx[i]);
-        auto pos = idxIter - prevMatch2DIdx.begin();
-        if ((idxIter != prevMatch2DIdx.end()) && (prevMatch2DIdx[pos] == _tracker._prevIdx[i])) {
-            currMatch2DIdx.push_back(_tracker._currIdx[i]);
-            currMatch3DIdx.push_back(prevMatch3DIdx[pos]);
-        }
+    //match only features that have been recorded already
+    vector<int> prevMatch2DIdx, prev2DIdx, curr2DIdx, currMatch2DIdx;
+    _tracker._prevFrame.getMatchedIndices(prev2DIdx);
+    int nCurrPts = _tracker._currFrame.getNPoints();
+    curr2DIdx.reserve(nCurrPts);
+    for (int i = 0; i < nCurrPts; i++) {
+        curr2DIdx.push_back(i);
     }
+    _tracker.matchFeatures(prev2DIdx, curr2DIdx, prevMatch2DIdx, currMatch2DIdx);
+    
 
 #ifdef DEBUGINFO
     cout << "(TRACKING) Found map points: " << currMatch2DIdx.size() << " out of " << _tracker._currIdx.size() << " matches" << endl;
@@ -452,7 +447,8 @@ bool CSfM::tracking() {
         _lostCount = 0;
         
         //get point match coordinates
-        vector<Matx31d> currMatch3D; vector<Point2d> currMatch2D;
+        vector<Matx31d> currMatch3D; vector<Point2d> currMatch2D; vector<int> currMatch3DIdx;
+        _tracker._prevFrame.getPoints3DIdxAt(prevMatch2DIdx, currMatch3DIdx);
         _mapper.getPointsAtIdx(currMatch3DIdx, currMatch3D);
         _tracker._currFrame.getPointsAt(currMatch2DIdx, currMatch2D);
         
@@ -464,7 +460,7 @@ bool CSfM::tracking() {
         Mat tvec = Mat::zeros(3,1,CV_64FC1);
         
         vector<int> inlierIdx;
-        solvePnPRansac(currMatch3D, currMatch2D, _tracker._currFrame.getIntrinsicUndistorted(), Mat::zeros(4,1,CV_64FC1), rvec, tvec, false, iter, reprErr, confidence, inlierIdx, SOLVEPNP_EPNP );
+        solvePnPRansac(currMatch3D, currMatch2D, _tracker._currFrame.getIntrinsicUndistorted(), Mat::zeros(4,1,CV_64FC1), rvec, tvec, false, iter, reprErr, confidence, inlierIdx, SOLVEPNP_ITERATIVE);
         
         //update pose of current frame
         Mat R;
@@ -480,6 +476,7 @@ bool CSfM::tracking() {
             filt3DIdx.push_back(currMatch3DIdx[idx]);
         }
         _tracker._currFrame.updatePoints(filt2DIdx, filt3DIdx);
+        _mapper.updatePointViews(filt3DIdx);
         
 #ifdef DEBUGINFO
         cout << "(TRACKING) PnP: removed " << currMatch2D.size() - inlierIdx.size() << " outliers" << endl;
@@ -531,6 +528,7 @@ bool CSfM::tracking() {
         swap(_tracker._prevFrame,_tracker._currFrame);
     }
     
+    _mapper.incrementMapAge(1,0);
     return success;
 }
 
@@ -571,7 +569,7 @@ void CSfM::findMapPointsInCurrentFrame() {
     GeometryUtils::projectPoints(P, K, newPts3D, newPts2D);
     
     vector<int> matchMapIdx, matchFrameIdx;
-    _tracker.matchFeatures(newPts2D, newPtsDesc, unmatchedPts2D, unmatchedDesc, matchMapIdx, matchFrameIdx, 0, 1.5*_maxReprErr);
+    _tracker.matchFeatures(newPts2D, newPtsDesc, unmatchedPts2D, unmatchedDesc, matchMapIdx, matchFrameIdx, 0, _maxReprErr);
     
     //get matched 3d points index and update frame
     vector<int> match3DIdx, match2DIdx;
@@ -583,6 +581,7 @@ void CSfM::findMapPointsInCurrentFrame() {
         match2DIdx.push_back(unmatchedPts2DIdx[idx]);
     }
     _tracker._currFrame.updatePoints(match2DIdx, match3DIdx);
+    _mapper.updatePointViews(match3DIdx);
     
 #ifdef DEBUGINFO
     cout << "(TRACKING) Found additional " << matchMapIdx.size() << " points from map" << endl;
@@ -594,13 +593,14 @@ int CSfM::cullMapPoints() {
     
     //1. Cull points observed by fewer than 3 keyframes
     vector<int> cullIdx, newPtsIdx;
-    _mapper.removePoints(_minVisibilityFrameNo, cullIdx, newPtsIdx);
-    for (int i = 0; i < _kFrames.size(); i++) {
-        _kFrames[i].cullPoints(newPtsIdx);
+    _mapper.removePointsThreshold(cullIdx, newPtsIdx);
+    if (cullIdx.size() > 0) {
+        for (int i = 0; i < _kFrames.size(); i++) {
+            _kFrames[i].cullPoints(newPtsIdx);
+        }
+        _tracker._prevFrame.cullPoints(newPtsIdx);
+        _tracker._currFrame.cullPoints(newPtsIdx);
     }
-    _tracker._prevFrame.cullPoints(newPtsIdx);
-    _tracker._currFrame.cullPoints(newPtsIdx);
-    
     return cullIdx.size();
 }
 
@@ -611,7 +611,7 @@ int CSfM::cullKeyFrames(double thresholdRate) {
     
     //greedy approach, start from the oldest keyframe
     int kfIdx = 0;
-    while (kfIdx < _kFrames.size()) {
+    while (kfIdx < _kFrames.size()-1) {
         //get all the points found in current keyframe
         vector<int> pts3DIdx;
         _kFrames[kfIdx].getMatchedPoints(pts3DIdx);
@@ -748,7 +748,7 @@ bool CSfM::init() {
                     //choose best model
                     double r_h = s_h / (s_h + s_f);
                     bool canInit = false;
-                    if (r_h > 1) {
+                    if (r_h > 0.45) {
                         //choose homography
 #ifdef DEBUGINFO
                         
@@ -844,20 +844,23 @@ bool CSfM::init() {
                         _kFrames[0].updatePoints(_tracker._prevMatch,_tracker._prevIdx,pts3DIdx);
                         _tracker._currFrame.updatePoints(_tracker._currMatch,_tracker._currIdx,pts3DIdx);
                         
-                        //bundle adjustment of both structure and pose
-                        bundleAdjustment(vector<int>{_kFrames[0].getFrameNo(),_tracker._currFrame.getFrameNo()},CTracker::BA_TYPE::STRUCT_AND_POSE);
-                        
+
                         //add descriptors
                         Mat prevDescriptors, currDescriptors;
                         _kFrames[0].getDescriptorsAt(_tracker._prevIdx, prevDescriptors);
                         _tracker._currFrame.getDescriptorsAt(_tracker._currIdx, currDescriptors);
                         _mapper.addDescriptors(pts3DIdx, prevDescriptors);
                         _mapper.addDescriptors(pts3DIdx, currDescriptors);
-                        
-                        //add second frame to keyframe list
+                        _mapper.incrementMapAge(0,2);
+                    
+                        //push new keyframe
                         _kFrames.push_back(CKeyFrame(_tracker._currFrame));
                         _kFrameIdxToFrameNo[1] = _tracker._currFrame.getFrameNo();
                         _FrameNoTokFrameIdx[_tracker._currFrame.getFrameNo()] = 1;
+                        
+                        //bundle adjustment of both structure and pose
+                        bundleAdjustment(vector<int>{_kFrames[0].getFrameNo(),_kFrames[1].getFrameNo()},CTracker::BA_TYPE::STRUCT_AND_POSE);
+
                         
 #ifdef DEBUGINFO
                         cout << "# Features triangulated in frame 0: " << _kFrames[0].getNMatchedPoints() << endl;
@@ -865,8 +868,8 @@ bool CSfM::init() {
 #endif
                         
                         //change state
-                        _tracker._minMatchDistance = 0;
                         _state = RUNNING;
+                        _tracker._currFrame.setPose(_kFrames[1].getRotation(), _kFrames[1].getTranslation());
                         swap(_tracker._prevFrame,_tracker._currFrame);
                         return true;
                     }

@@ -90,10 +90,13 @@ public:
     void getMatchedPoints(vector<Point2d> &pts2D, vector<int> &pts3DIdx, vector<int> &pts2DIdx);
     void getMatchedPoints(vector<int> &pts2DIdx, vector<int> &pts3DIdx);
     void getMatchedPoints(vector<int> &pts3DIdx);
+    void getMatchedIndices(vector<int> &pts2DIdx);
     void getUnmatchedPoints(vector<Point2d> &pts2D, vector<int> &pts2DIdx);
     void getUnmatchedPoints(vector<Point2d> &pts2D, Mat &desc, vector<int> &pts2DIdx);
     
     void getPointsAt(const vector<int> &pts2DIdx, vector<Point2d> &pts2D);
+    void getPoints3DIdxAt(const vector<int> &pts2DIdx, vector<int> &pts3DIdx);
+    void getPointsDistortedAt(const vector<int> &pts2DIdx, vector<Point2d> &pts2D);
     void getPointsAt(const vector<int> &pts2DIdx, vector<Point2f> &pts2D);
     void getDescriptorsAt(const vector<int> &pts2DIdx, Mat &descriptors);
     

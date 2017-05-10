@@ -53,6 +53,7 @@ public:
     void matchFeatures(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1);
     void matchFeaturesRadius(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1, const double minDistance, const double maxDistance);
     void matchFeatures(const vector<Point2d> &pts0, const Mat &desc0, const vector<Point2d> &pts1, const Mat &desc1, vector<int> &matchIdx0, vector<int> &matchIdx1, const double minDistance, const double maxDistance);
+    void matchFeatures(const vector<int> &prevIdx, const vector<int> &currIdx, vector<int> &prevMatchIdx, vector<int> &currMatchIdx);
     bool matchFeaturesRadius();
     bool matchFeatures();
     bool computeOpticalFlow();
@@ -66,11 +67,11 @@ public:
     enum BA_TYPE { STRUCT_ONLY = 0, POSE_ONLY = 1, STRUCT_AND_POSE = 2};
     
 private:
-
+    void initialiseBAOptions();
     
     //feature matching and description
-    Ptr<FeatureDetector> _detector;
-    Ptr<DescriptorExtractor> _descriptor;
+    brisk::BriskFeatureDetector *_detector;
+    brisk::BriskDescriptorExtractor *_descriptor;
     brisk::BruteForceMatcher _matcher;
     
     //thresholds
@@ -95,6 +96,8 @@ private:
     CFrame _currFrame;
     
     //bundle adjustment structures
+    ceres::Solver::Options _opts;
+    
     struct BAStructAndPoseFunctor {
         
         BAStructAndPoseFunctor(double pt2d_x, double pt2d_y, const double *k);

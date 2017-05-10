@@ -42,7 +42,8 @@ CTracker::CTracker(const Matx33d &K, const vector<double> &d, const Size &imSize
     //initialise detector and descriptor
     _detector = new brisk::BriskFeatureDetector(60,6,true);
     bool rotInvariant = true, scaleInvariant = true;
-    _descriptor = new brisk::BriskDescriptorExtractor(rotInvariant,scaleInvariant,brisk::BriskDescriptorExtractor::Version::briskV2);
+    _descriptor = new brisk::BriskDescriptorExtractor(rotInvariant,scaleInvariant,brisk::BriskDescriptorExtractor::Version::briskV2, 1.0);
+    
 }
 
 CTracker::~CTracker() {
@@ -121,9 +122,16 @@ void CTracker::matchFeatures(const vector<Point2d> &pts0, const Mat &desc0, cons
         int currIdx = matches[i][0].trainIdx;
         double ratio = matches[i][0].distance/matches[i][1].distance;
         double d = (pts0[prevIdx].x - pts1[currIdx].x)*(pts0[prevIdx].x - pts1[currIdx].x) + (pts0[prevIdx].y - pts1[currIdx].y)*(pts0[prevIdx].y - pts1[currIdx].y);
-        if ((d > _minMatchDistanceSq) && (d < _maxMatchDistanceSq) && (ratio < _ratioTest) && ((matchDistance[currIdx] == -1) || (matches[i][0].distance < matchDistance[currIdx]))) {
+        
+        bool minDist = (d > _minMatchDistanceSq);
+        bool maxDist = (d < _maxMatchDistanceSq);
+        bool crossRatio = (ratio < _ratioTest);
+        bool newMatch = (matchDistance[currIdx] == -1);
+        bool betterMatch = (matches[i][0].distance < matchDistance[currIdx]);
+        
+        if (minDist && maxDist && crossRatio && (newMatch || betterMatch)) {
             //matches are not 1-1
-            if (matchDistance[currIdx] == -1) {
+            if (newMatch) {
                 matchIdx0.push_back(prevIdx);
                 matchIdx1.push_back(currIdx);
                 matchedIdx[currIdx] = matchCount;
@@ -213,9 +221,18 @@ void CTracker::matchFeatures(const vector<Point2d> &pts0, const Mat &desc0, cons
         int currIdx = matches[i][0].trainIdx;
         double ratio = matches[i][0].distance/matches[i][1].distance;
         double d = (pts0[prevIdx].x - pts1[currIdx].x)*(pts0[prevIdx].x - pts1[currIdx].x) + (pts0[prevIdx].y - pts1[currIdx].y)*(pts0[prevIdx].y - pts1[currIdx].y);
-        if ((d > minDistanceSq) && (d < maxDistanceSq) && (ratio < _ratioTest) && ((matchDistance[currIdx] == -1) || (matches[i][0].distance < matchDistance[currIdx]))) {
+        
+        
+        bool minDist = (d > minDistanceSq);
+        bool maxDist = (d < maxDistanceSq);
+        bool crossRatio = (ratio < _ratioTest);
+        bool newMatch = (matchDistance[currIdx] == -1);
+        bool betterMatch = (matches[i][0].distance < matchDistance[currIdx]);
+        
+        
+        if (minDist && maxDist && crossRatio && (newMatch || betterMatch)) {
             //matches are not 1-1
-            if (matchDistance[currIdx] == -1) {
+            if (newMatch) {
                 matchIdx0.push_back(prevIdx);
                 matchIdx1.push_back(currIdx);
                 matchedIdx[currIdx] = matchCount;
@@ -344,6 +361,57 @@ bool CTracker::matchFeaturesRadius() {
         return true;
     
     return false;
+}
+
+void CTracker::matchFeatures(const vector<int> &prevFrameIdx, const vector<int> &currFrameIdx, vector<int> &prevMatchIdx, vector<int> &currMatchIdx) {
+    
+    vector<vector<DMatch>> matches;
+    
+    //get keypoints
+    vector<Point2d> prevPts, currPts;
+    _prevFrame.getPointsAt(prevFrameIdx, prevPts);
+    _currFrame.getPointsAt(currFrameIdx, currPts);
+    
+    //match closest 2 candidates
+    Mat prevDesc, currDesc;
+    _prevFrame.getDescriptorsAt(prevFrameIdx, prevDesc);
+    _currFrame.getDescriptorsAt(currFrameIdx, currDesc);
+    _matcher.knnMatch(prevDesc, currDesc, matches, 2);
+    vector<double> matchDistance(currPts.size(), -1);
+    vector<int> matchedIdx(currPts.size(),-1);
+    
+    
+    //TODO: worth doing Fwd/Bwd test?
+    prevMatchIdx.reserve(matches.size());
+    currMatchIdx.reserve(matches.size());
+    int matchCount = 0;
+    for (int i = 0; i < matches.size(); i++) {
+        int prevIdx = matches[i][0].queryIdx;
+        int currIdx = matches[i][0].trainIdx;
+        double ratio = matches[i][0].distance/matches[i][1].distance;
+        double d = (prevPts[prevIdx].x - currPts[currIdx].x)*(prevPts[prevIdx].x - currPts[currIdx].x) + (prevPts[prevIdx].y - currPts[currIdx].y)*(prevPts[prevIdx].y - currPts[currIdx].y);
+        
+        bool minDist = (d > _minMatchDistanceSq);
+        bool maxDist = (d < _maxMatchDistanceSq);
+        bool crossRatio = (ratio < _ratioTest);
+        bool newMatch = (matchDistance[currIdx] == -1);
+        bool betterMatch = (matches[i][0].distance < matchDistance[currIdx]);
+        
+        if ( minDist && maxDist && crossRatio && ( newMatch || betterMatch)) {
+            //matches are not 1-1
+            if (newMatch) {
+                prevMatchIdx.push_back(prevFrameIdx[prevIdx]);
+                currMatchIdx.push_back(currFrameIdx[currIdx]);
+                matchedIdx[currIdx] = matchCount;
+                matchCount++;
+            }
+            else {
+                int oldIdx = matchedIdx[currIdx];
+                prevMatchIdx[oldIdx] = prevFrameIdx[prevIdx];
+            }
+            matchDistance[currIdx] = matches[i][0].distance;
+        }
+    }
 }
 
 bool CTracker::matchFeatures() {
@@ -498,6 +566,14 @@ bool CTracker::computeOpticalFlow() {
 //                                      //
 //                                      //
 //--------------------------------------//
+void CTracker::initialiseBAOptions() {
+    
+    //create solution options
+    _opts.linear_solver_type = ceres::DENSE_SCHUR;
+    _opts.minimizer_progress_to_stdout = false;
+    _opts.logging_type = ceres::LoggingType::SILENT;
+}
+
 CTracker::BAStructAndPoseFunctor::BAStructAndPoseFunctor(double pt2d_x, double pt2d_y, const double *k) {
     
     _pt2d_x = pt2d_x;
@@ -617,14 +693,7 @@ void CTracker::bundleAdjustmentStructAndPose(const vector<Point2d> &observations
         
     }
     
-    
-    //create solution options
-    ceres::Solver::Options opts;
-    opts.linear_solver_type = ceres::DENSE_SCHUR;
-    opts.minimizer_progress_to_stdout = false;
-    opts.logging_type = ceres::LoggingType::SILENT;
-    
     //solve BA
     ceres::Solver::Summary summ;
-    ceres::Solve(opts, &prob, &summ);
+    ceres::Solve(_opts, &prob, &summ);
 }

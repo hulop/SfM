@@ -318,6 +318,16 @@ void CFrame::getMatchedPoints(vector<int> &pts3DIdx) {
     
 }
 
+void CFrame::getMatchedIndices(vector<int> &pts2DIdx) {
+    pts2DIdx.reserve(_nMatched);
+    
+    for (int i = 0; i < _status.size(); i++) {
+        if (_status[i] == 1) {
+            pts2DIdx.push_back(i);
+        }
+    }
+}
+
 void CFrame::getMatchedPoints(vector<Point2d> &pts2D, vector<int> &pts3DIdx) {
 
     //preallocate memory for speed
@@ -378,6 +388,23 @@ void CFrame::getPointsAt(const vector<int> &pts2DIdx, vector<Point2f> &pts2D) {
         int idx = pts2DIdx[i];
         pts2D.push_back(Point2f(_pts[idx].x,_pts[idx].y));
     }
+}
+
+void CFrame::getPointsDistortedAt(const vector<int> &pts2DIdx, vector<Point2d> &pts2D) {
+    pts2D.reserve(pts2D.size()+pts2DIdx.size());
+    for (int i =0; i < pts2DIdx.size(); i++) {
+        pts2D.push_back(_pts_dist[pts2DIdx[i]]);
+    }
+    
+}
+
+void CFrame::getPoints3DIdxAt(const vector<int> &pts2DIdx, vector<int> &pts3DIdx) {
+    pts3DIdx.reserve(pts2DIdx.size());
+    for (int i = 0; i < pts2DIdx.size(); i++) {
+        int idx = pts2DIdx[i];
+        pts3DIdx.push_back(_pts3DIdx[idx]);
+    }
+    
 }
 
 int CFrame::getNMatchedPoints() {

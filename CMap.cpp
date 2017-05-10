@@ -24,7 +24,8 @@
 
 CMap::CMap() {
     _lastPtNo = 0;
-    
+    _kfThreshold = 3;
+    _trackThreshold = 0.25;
 }
 
 CMap::~CMap() {
@@ -43,11 +44,17 @@ void CMap::addNewPoints(const vector<Matx31d> &pts3D, const vector<vector<int> >
     _frameNo.reserve(newSize);
     _pts2DIdx.reserve(newSize);
     _descriptor.reserve(newSize);
+    _timeAlive.reserve(newSize);
+    _kfAlive.reserve(newSize);
+    _ptsViews.reserve(newSize);
     for (int i = 0; i < pts3D.size(); i++) {
         _pts3D.push_back(pts3D[i]);
         _pts3DIdx.push_back(_lastPtNo);
         _frameNo.push_back(vector<int> ());
         _pts2DIdx.push_back(vector<int> ());
+        _timeAlive.push_back(0);
+        _kfAlive.push_back(0);
+        _ptsViews.push_back(frameNo.size());
         //prepare descriptor
         _descriptor.push_back(Mat());
         for (int j = 0; j < pts2DIdx.size(); j++) {
@@ -114,6 +121,7 @@ void CMap::addPointMatches(const vector<int> &pts3DIdx, const vector<int> &pts2D
         int idx = pts3DIdx[i];
         _pts2DIdx[idx].push_back(pts2DIdx[i]);
         _frameNo[idx].push_back(frameNo);
+        _ptsViews[idx]++;
         //update lookup map
         _pointInFrameIdx.emplace(idx,frameNo);
         _frameViewsPointIdx.emplace(frameNo,idx);
@@ -398,16 +406,26 @@ void CMap::getRepresentativeDescriptors(const vector<int> &pts3DIdx, Mat &descri
 }
 
 
-void CMap::removePoints(int threshold, vector<int> &ptsCullIdx, vector<int> &newPtsIdx) {
-    //find points seen by less than threshold frames
+void CMap::removePointsThreshold(vector<int> &ptsCullIdx, vector<int> &newPtsIdx) {
+    //find points seen by less than threshold frames unless they have been created recently
     for (int i = 0; i < _pts3DIdx.size(); i++) {
         int idx = _pts3DIdx[i];
-        if (_frameNo[idx].size() < threshold) {
+        
+        //if the point has been created in the last keyframe but has been alive for less than 3 keyframes
+        if ((_kfAlive[idx] >= 1) && (_kfAlive[idx] <= _kfThreshold)) {
+            float score = (float)_ptsViews[idx]/_timeAlive[idx];
+            if ((_frameNo[idx].size() < _kfThreshold) || (score < _trackThreshold))
+                ptsCullIdx.push_back(idx);
+        }
+        if ((_frameNo[idx].size() < _kfThreshold) && (_kfAlive[idx] > _kfThreshold)) {
             ptsCullIdx.push_back(idx);
         }
+        
     }
-    sort(ptsCullIdx.begin(),ptsCullIdx.end());
-    removePoints(ptsCullIdx, newPtsIdx);
+    if (ptsCullIdx.size() > 0) {
+        sort(ptsCullIdx.begin(),ptsCullIdx.end());
+        removePoints(ptsCullIdx, newPtsIdx);
+    }
 }
 
 void CMap::removePoints(const vector<int> &ptsCullIdx, vector<int> &ptsStatusFlag) {
@@ -523,6 +541,9 @@ void CMap::removeFrame(const int frameNo, const vector<int> &framePtsIdx) {
                 break;
             }
         }
+        
+        //decrement counter for point views
+        _ptsViews[ptIdx]--;
     }
     
     //remove from graphs
@@ -559,4 +580,20 @@ bool CMap::arePointsSeenByAtLeast(const vector<int> &pts3DIdx, const int nFrames
     }
     
     return false;
+}
+
+
+void CMap::incrementMapAge(int tIncrement, int kfIncrement) {
+    for (int i = 0; i < _pts3DIdx.size(); i++) {
+        int idx = _pts3DIdx[i];
+        _timeAlive[idx] += tIncrement;
+        _kfAlive[idx] += kfIncrement;
+    }
+}
+
+void CMap::updatePointViews(const vector<int> &pts3DIdx) {
+    for (int i = 0; i < pts3DIdx.size(); i++) {
+        int idx = pts3DIdx[i];
+        _ptsViews[idx]++;
+    }
 }

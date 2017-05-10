@@ -43,10 +43,14 @@ public:
     void addDescriptors(const vector<int> &pts3DIdx, const Mat &descriptors);
     
     void removePoints(const vector<int> &ptsCullIdx, vector<int> &newPtsIdx);
-    void removePoints(int threshold, vector<int> &ptsCullIdx, vector<int> &newPtsIdx);
+    void removePointsThreshold(vector<int> &ptsCullIdx, vector<int> &newPtsIdx);
     void removeFrame(const int frameNo, const vector<int> &framePtsIdx);
     
     bool arePointsSeenByAtLeast(const vector<int> &pts3DIdx, const int nFramesThreshold, const double ratioPtsThreshold);
+    
+    void incrementMapAge(int tIncrement = 0, int kfIncrement = 0);
+    void updatePointViews(const vector<int> &pts3DIdx);
+    
     
     void getPointsAtIdx(const vector<int> &pts3DIdx, vector<Matx31d> &pts3D);
     void getPointsInFrame(vector<Matx31d> &pts3D, vector<int> &pts2DIdx, const int frameNo);
@@ -75,8 +79,13 @@ private:
     void addCovisiblePoint(int idx0, int idx1, int increment = 1);
     void updateCentroid();
     
+    int _kfThreshold;
+    float _trackThreshold;
     
     vector<Matx31d> _pts3D;
+    vector<int> _kfAlive;
+    vector<int> _timeAlive;
+    vector<int> _ptsViews;
     vector<Mat> _descriptor;
     vector<vector<Matx31d>> _viewDir;
     vector<vector<int>> _frameNo;
