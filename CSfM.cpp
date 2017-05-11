@@ -30,7 +30,7 @@ CSfM::CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d) : _tra
     _maxReprErr = 7; //maximum average reprojection/transfer error
 
     _lostCount = 0;
-    _minCovisibilityStrength = 0; //how many points are covisible between frames for bundle adjustment to proceed
+    _minCovisibilityStrength = 10; //how many points are covisible between frames for bundle adjustment to proceed
     _maxLost = 10; //how many frames can be processed before declaring loss of track
     _frameCount = 0; //frame counter
     _motionHistoryLength = 2; //how many frames should you remember the pose for depending on how complicated the motion model is
@@ -40,7 +40,7 @@ CSfM::CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d) : _tra
     _newKFrameTimeLag = 10;
     
     //number of feature threshold to consider connected to frames with covisible points
-    _covisibilityThreshold = 50;
+    _covisibilityThreshold = 10;
     
     //minimum number of keyframes that a map point need to visible in before getting culled
     _minVisibilityFrameNo = 3;
@@ -227,17 +227,19 @@ bool CSfM::mapping() {
     cout << "(MAPPER) Culled " << cullMapCount << " map points" << endl;
 #endif
     
-    // ORBSLAM 6.D.
-    // Local BA
-    connectedKFNo.push_back(lastKFNo);
-    bundleAdjustment(connectedKFNo,CTracker::BA_TYPE::POSE_ONLY);
-    
     // ORBSLAM 6.E.
     // Local KF culling
     int cullFrameCount = cullKeyFrames();
 #ifdef DEBUGINFO
     cout << "(MAPPER) Culled " << cullFrameCount << " key frames" << endl;
 #endif
+    
+    // ORBSLAM 6.D.
+    // Local BA
+    connectedKFNo.clear();
+    _mapper.getFramesConnectedToFrame(lastKFNo, connectedKFNo, _covisibilityThreshold);
+    connectedKFNo.push_back(lastKFNo);
+    bundleAdjustment(connectedKFNo,CTracker::BA_TYPE::STRUCT_AND_POSE);
     
     _mapper.incrementMapAge(0,1);
     _keyFrameAdded = false;
@@ -611,6 +613,7 @@ int CSfM::cullKeyFrames(double thresholdRate) {
     
     //greedy approach, start from the oldest keyframe
     int kfIdx = 0;
+    bool culled = false;
     while (kfIdx < _kFrames.size()-1) {
         //get all the points found in current keyframe
         vector<int> pts3DIdx;
@@ -622,15 +625,12 @@ int CSfM::cullKeyFrames(double thresholdRate) {
         
         //if so, cull the frame
         if (cull) {
+            culled = true;
             //remove frame references from the map
             _mapper.removeFrame(frameNo, pts3DIdx);
             
             //remove from list of keyframes
             _kFrames.erase(_kFrames.begin() + kfIdx);
-            
-            //remove from lookup vector
-            _kFrameIdxToFrameNo.erase(kfIdx);
-            _FrameNoTokFrameIdx.erase(frameNo);
             
             culledFrameNo++;
         } else {
@@ -639,6 +639,15 @@ int CSfM::cullKeyFrames(double thresholdRate) {
         }
     }
     
+    if (culled) {
+        _kFrameIdxToFrameNo.clear();
+        _FrameNoTokFrameIdx.clear();
+        for (int i = 0; i < _kFrames.size(); i++) {
+            int frameNo = _kFrames[i].getFrameNo();
+            _kFrameIdxToFrameNo[i] = frameNo;
+            _FrameNoTokFrameIdx[frameNo] = i;
+        }
+    }
     
     return culledFrameNo;
 }

@@ -401,6 +401,7 @@ void CMap::getRepresentativeDescriptors(const vector<int> &pts3DIdx, Mat &descri
         }
     
         //put descriptor in output
+        int lastRow = _descriptor[idx].rows -1;
         descriptors.push_back(_descriptor[idx].row(minIdx));
     }
 }

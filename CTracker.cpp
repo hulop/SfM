@@ -693,6 +693,7 @@ void CTracker::bundleAdjustmentStructAndPose(const vector<Point2d> &observations
         
     }
     
+    
     //solve BA
     ceres::Solver::Summary summ;
     ceres::Solve(_opts, &prob, &summ);
