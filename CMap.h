@@ -24,8 +24,8 @@
 #define CMap_hpp
 
 #include "CFrame.h"
-#include "../../cvUtils/Hashing.h"
-#include "../../cvUtils/VectorUtils.hpp"
+#include "cvUtils/Hashing.h"
+#include "cvUtils/VectorUtils.hpp"
 #include <unordered_map>
 #include <bitset>
 #include <list>

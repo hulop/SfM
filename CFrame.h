@@ -100,6 +100,11 @@ public:
     void getPointsAt(const vector<int> &pts2DIdx, vector<Point2f> &pts2D);
     void getDescriptorsAt(const vector<int> &pts2DIdx, Mat &descriptors);
     
+    //errors
+    double getMeanError() {return _meanErr;};
+    double getMaxError() {return _maxErr;};
+    void updateFrameErrorStatistics(const double meanErr, const double maxErr);
+    
     //update
     void updatePoints(const vector<Point2d> &pts, const vector<int> &idx, const vector<int> &idx3D);
     void updatePoints(const vector<Point2f> &pts, const vector<int> &idx, const vector<int> &idx3D);
@@ -138,6 +143,10 @@ private:
     Matx31d _rot;
     Matx31d _t;
     Matx34d _P;
+    
+    //error statistics
+    double _meanErr;
+    double _maxErr;
 };
 
 

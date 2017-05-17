@@ -30,7 +30,7 @@ CSfM::CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d) : _tra
     _maxReprErr = 7; //maximum average reprojection/transfer error
 
     _lostCount = 0;
-    _minCovisibilityStrength = 10; //how many points are covisible between frames for bundle adjustment to proceed
+    
     _maxLost = 10; //how many frames can be processed before declaring loss of track
     _frameCount = 0; //frame counter
     _motionHistoryLength = 2; //how many frames should you remember the pose for depending on how complicated the motion model is
@@ -40,7 +40,7 @@ CSfM::CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d) : _tra
     _newKFrameTimeLag = 10;
     
     //number of feature threshold to consider connected to frames with covisible points
-    _covisibilityThreshold = 10;
+    _covisibilityThreshold = 0;
     
     //minimum number of keyframes that a map point need to visible in before getting culled
     _minVisibilityFrameNo = 3;
@@ -81,6 +81,9 @@ void CSfM::addFrame(cv::Mat frameIn) {
             break;
     }
 
+    //get centroid
+    Point3d c = _mapper.getCentroid();
+    
     //debug show points
     vector<Matx31d> showPts3D, allPts3D; vector<int> showPts3DIdx;
     _tracker._prevFrame.getMatchedPoints(showPts3DIdx);
@@ -88,6 +91,8 @@ void CSfM::addFrame(cv::Mat frameIn) {
     _mapper.getPoints(allPts3D);
     Mat dShow = Display2D::display3DProjections(_tracker._prevFrame.getFrameGrey(), _tracker._prevFrame.getIntrinsicUndistorted(), _tracker._prevFrame.getRotation(), _tracker._prevFrame.getTranslation(), allPts3D, 3, Scalar(0,0,255),1);
     dShow = Display2D::display3DProjections(dShow, _tracker._prevFrame.getIntrinsicUndistorted(), _tracker._prevFrame.getRotation(), _tracker._prevFrame.getTranslation(), showPts3D, 3, Scalar(0,255,0));
+    Point2d c2d = GeometryUtils::projectPoint(_tracker._prevFrame.getRotation(), _tracker._prevFrame.getTranslation(), _tracker._prevFrame.getIntrinsicUndistorted(), c);
+    circle(dShow, c2d/2.0, 5, Scalar(255,255,0),-1,CV_AA);
     //_vOut << dShow;
     imshow("Debug",dShow);
     waitKey(1);
@@ -157,9 +162,9 @@ bool CSfM::mapping() {
                     currFilt2DIdx.push_back(currUnmatchedPtsIdx2D[currIdx]);
                     prevFilt2DPts.push_back(prevUnmatchedPts2D[prevIdx]);
                     currFilt2DPts.push_back(currUnmatchedPts2D[currIdx]);
-                    filtPts3D.push_back(matchPts3D[i]);
-                    }
+                    filtPts3D.push_back(matchPts3D[j]);
                 }
+            }
 
             //update map and frames
             vector<int> filtPts3DIdx;
@@ -174,8 +179,7 @@ bool CSfM::mapping() {
             count += filtPts3D.size();
             
             //reproject in other keyframes and check for matches
-            for (int j = 0; j < connectedKFNo.size(); j++) {
-                if (i != j) {
+            for (int j = i+1; j < connectedKFNo.size(); j++) {
                 
                     int kfIdx_j = _FrameNoTokFrameIdx[connectedKFNo[j]];
                 
@@ -205,7 +209,6 @@ bool CSfM::mapping() {
                         newPts2DIdx.push_back(unmatchedPts2DIdx[matchIdx1[k]]);
                     }
                     updateMapAndFrame(connectedKFNo[j], newPts3DIdx, newPts2DIdx);
-                }
             }
             //update
             _mapper.addPointMatches(filtPts3DIdx, currFilt2DIdx, lastKFNo);
@@ -213,6 +216,7 @@ bool CSfM::mapping() {
             _mapper.addDescriptors(filtPts3DIdx, cDesc);
          }
     }
+    
     
 #ifdef DEBUGINFO
     cout << "(MAPPER) Found matches for " << count << " new map points" << endl;
@@ -229,17 +233,61 @@ bool CSfM::mapping() {
     
     // ORBSLAM 6.E.
     // Local KF culling
-    int cullFrameCount = cullKeyFrames();
+    int cullFrameCount = 0;//cullKeyFrames();
 #ifdef DEBUGINFO
     cout << "(MAPPER) Culled " << cullFrameCount << " key frames" << endl;
 #endif
-    
+
     // ORBSLAM 6.D.
     // Local BA
+    lastKFIdx -= cullFrameCount;
     connectedKFNo.clear();
     _mapper.getFramesConnectedToFrame(lastKFNo, connectedKFNo, _covisibilityThreshold);
     connectedKFNo.push_back(lastKFNo);
     bundleAdjustment(connectedKFNo,CTracker::BA_TYPE::STRUCT_AND_POSE);
+    
+    _tracker._prevFrame.setPose(_kFrames[lastKFIdx].getRotation(), _kFrames[lastKFIdx].getTranslation());
+    
+    if (false) {
+        //check reprojection error
+        for (int i = 0; i < _kFrames.size(); i++) {
+            vector<Matx31d> pts3d;
+            vector<Point2d> pts2d;
+            vector<int> pts2didx;
+            vector<Point2d> proj2d;
+            vector<int> pts3didx;
+            _kFrames[i].getMatchedPoints(pts2d, pts3didx, pts2didx);
+            _mapper.getPointsAtIdx(pts3didx, pts3d);
+            //project point in 2d
+            GeometryUtils::projectPoints(_kFrames[i].getRotation(), _kFrames[i].getTranslation(), _kFrames[i].getIntrinsicUndistorted(), pts3d, proj2d);
+            
+            //show image and calculate differences
+            Mat f = _kFrames[i].getFrame();
+            Mat dShow = f.clone();
+            
+            double meanD = 0, maxD = 0;
+            for (int j = 0; j < pts3d.size(); j++) {
+                circle(dShow, proj2d[j], 3, Scalar(0,0,255), -1, CV_AA);
+                circle(dShow, pts2d[j], 4, Scalar(0,255,0));
+                double diff = sqrt((proj2d[j].x - pts2d[j].x)*(proj2d[j].x - pts2d[j].x) + (proj2d[j].y - pts2d[j].y)*(proj2d[j].y - pts2d[j].y));
+                meanD += diff;
+                maxD = (diff > maxD) ? diff : maxD;
+                //cout << i << " " << pts2didx[j] << " " << diff << endl;
+            }
+            meanD /= pts3d.size();
+            //cout << "Mean: " << _kFrames[i].getMeanError() << endl;
+            //cout << "Max: " << _kFrames[i].getMaxError() << endl;
+            cout << "Mean: " << meanD << endl;
+            cout << "Max: " << maxD << endl;
+            
+            resize(dShow,dShow,Size(dShow.cols*0.5,dShow.rows*0.5));
+            imshow("Bug hunting", dShow);
+            waitKey(1);
+        }
+        waitKey();
+    }
+    
+    
     
     _mapper.incrementMapAge(0,1);
     _keyFrameAdded = false;
@@ -280,14 +328,48 @@ void CSfM::bundleAdjustment(const vector<int> &frameIdx, int isStructAndPose) {
         }
     }
     
-    //run bundle adjustment
     _tracker.bundleAdjustmentStructAndPose(pts2d, camIdx, K, R, t, pts3d, isStructAndPose);
-    
     //update projection matrices
     for (int i = 0; i < frameIdx.size(); i++) {
         int kFrameIdx = _FrameNoTokFrameIdx[frameIdx[i]];
         _kFrames[kFrameIdx].calculateProjectionMatrix();
     }
+    
+    //update reprojection errors
+    //Matx34d P;
+    //Matx33d Kframe;
+    //double meanDist = 0;
+    //double maxDist = 0;
+    //int idx = 0;
+    //int count = 0;
+    //for (int i = 0; i < pts3d.size(); i++) {
+    //    if (i == 0) {
+    //        idx = _FrameNoTokFrameIdx[frameIdx[camIdx[i]]];
+    //        P = _kFrames[idx].getProjectionMatrix();
+    //        Kframe = _kFrames[idx].getIntrinsicUndistorted();
+    //    } else if (camIdx[i] != camIdx[i-1]) {
+    //        //update previous frame with statistics
+    //        meanDist /= count;
+    //        _kFrames[idx].updateFrameErrorStatistics(sqrt(meanDist),sqrt(maxDist));
+    //
+    //        //update internal variables for new frame
+    //        idx = _FrameNoTokFrameIdx[frameIdx[camIdx[i]]];
+    //        P = _kFrames[idx].getProjectionMatrix();
+    //        Kframe = _kFrames[idx].getIntrinsicUndistorted();
+    //        maxDist = 0;
+    //        meanDist = 0;
+    //        count = 0;
+    //    }
+    //    Point2d proj2d = GeometryUtils::projectPoint(P, Kframe, pts3d[i]);
+    //    double dist = (proj2d.x - pts2d[i].x)*(proj2d.x - pts2d[i].x) + (proj2d.y - pts2d[i].y)*(proj2d.y - pts2d[i].y);
+    //    maxDist = (dist > maxDist) ? dist : maxDist;
+    //    meanDist += dist;
+    //    count++;
+    // }
+    //meanDist /= count;
+    //_kFrames[idx].updateFrameErrorStatistics(sqrt(meanDist),sqrt(maxDist));
+
+    
 }
 
 void CSfM::filterMatches(const vector<uchar> &status) {
@@ -424,6 +506,7 @@ bool CSfM::tracking() {
     _tracker.matchFeatures(prev2DIdx, curr2DIdx, prevMatch2DIdx, currMatch2DIdx);
     
 
+    
 #ifdef DEBUGINFO
     cout << "(TRACKING) Found map points: " << currMatch2DIdx.size() << " out of " << _tracker._currIdx.size() << " matches" << endl;
 #endif
@@ -480,6 +563,7 @@ bool CSfM::tracking() {
         _tracker._currFrame.updatePoints(filt2DIdx, filt3DIdx);
         _mapper.updatePointViews(filt3DIdx);
         
+
 #ifdef DEBUGINFO
         cout << "(TRACKING) PnP: removed " << currMatch2D.size() - inlierIdx.size() << " outliers" << endl;
 #endif
@@ -493,7 +577,7 @@ bool CSfM::tracking() {
 //        _mapper.getFramesConnectedToFrame(lastFrameNo, covisibleFrameIdx);
 //        covisibleFrameIdx.push_back(lastFrameNo);
 //        bundleAdjustment(covisibleFrameIdx, CTracker::BA_TYPE::POSE_ONLY);
-
+        
         //(ORBSLAM 5.E)
         //decide if keyframe
         if (addKeyFrame()) {

@@ -31,6 +31,11 @@ CFrame::CFrame(const Matx33d &K, const vector<double> &d, const Size &imSize) {
     _K = K;
     _imSize = imSize;
     _Kopt = getOptimalNewCameraMatrix(_K, _d, _imSize, 0);
+    
+    //set statistics
+    _meanErr = 0;
+    _maxErr = 0;
+    
 }
 
 CFrame::CFrame(const Mat &frameIn, const Matx33d &K, const vector<double> &d, const Size &imSize) {
@@ -65,6 +70,7 @@ CFrame::CFrame(const CFrame &frame) {
     _R = frame._R;
     _t = frame._t;
     _P = frame._P;
+    _rot = frame._rot;
     
     //number matched
     _nMatched = frame._nMatched;
@@ -101,6 +107,7 @@ CFrame& CFrame::operator=(const CFrame &frame) {
     _R = frame._R;
     _t = frame._t;
     _P = frame._P;
+    _rot = frame._rot;
     
     //number matched
     _nMatched = frame._nMatched;
@@ -126,6 +133,7 @@ void CFrame::resetInternals() {
     _nMatched = 0;
     _frameNo = -1;
     _pts3DIdx.clear();
+    setPose();
 }
 
 void CFrame::setFrame(const Mat &frameIn, int frameNo, const Matx33d &K, const vector<double> &d, const Size &imSize) {
@@ -460,4 +468,9 @@ void CFrame::cullPoints(const vector<int> &pts3DIdx) {
         }
     }
     _nMatched = sum(_status)[0];
+}
+
+void CFrame::updateFrameErrorStatistics(const double meanErr, const double maxErr) {
+    _meanErr = meanErr;
+    _maxErr = maxErr;
 }

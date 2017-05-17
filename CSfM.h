@@ -29,9 +29,9 @@
 #include "CTracker.h"
 #include "CMap.h"
 #include <opencv2/core/eigen.hpp>
-#include "../../cvUtils/Display2D.hpp"
-#include "../../cvUtils/VectorUtils.hpp"
-#include "../../cvUtils/GeometryUtils.hpp"
+#include "CVUtils/Display2D.hpp"
+#include "CVUtils/VectorUtils.hpp"
+#include "CVUtils/GeometryUtils.hpp"
 #include "brisk/brisk.h"
 
 
@@ -88,7 +88,6 @@ private:
     int _lostCount;
     int _maxLost;
     int _frameCount;
-    int _minCovisibilityStrength;
     int _covisibilityThreshold;
     int _newKFrameTimeLag;
     int _minVisibilityFrameNo;

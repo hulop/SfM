@@ -44,6 +44,8 @@ CTracker::CTracker(const Matx33d &K, const vector<double> &d, const Size &imSize
     bool rotInvariant = true, scaleInvariant = true;
     _descriptor = new brisk::BriskDescriptorExtractor(rotInvariant,scaleInvariant,brisk::BriskDescriptorExtractor::Version::briskV2, 1.0);
     
+    initialiseBAOptions();
+    
 }
 
 CTracker::~CTracker() {

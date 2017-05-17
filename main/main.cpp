@@ -24,8 +24,8 @@
 #include <stdlib.h>
 #include <opencv2/opencv.hpp>
 #include "Eigen/Dense"
-#include "../CSfM.h"
-#include "../../STLReader/CSTLReader.hpp"
+#include "SfM/CSfM.h"
+#include "STLReader/CSTLReader.hpp"
 
 using namespace cv;
 using namespace std;

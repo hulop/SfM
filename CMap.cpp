@@ -321,23 +321,23 @@ void CMap::addDescriptors(const vector<int> &pts3DIdx, const cv::Mat &descriptor
 }
 
 void CMap::updateCentroid() {
-    vector<float> x, y, z;
-    x.reserve(_pts3DIdx.size());
-    y.reserve(_pts3DIdx.size());
-    z.reserve(_pts3DIdx.size());
+    double xmin = LONG_MAX, xmax = LONG_MIN, ymin = LONG_MAX, ymax = LONG_MIN, zmin = LONG_MAX, zmax = LONG_MIN;
     
-    for (int i = 0; i < _pts3DIdx.size(); i++) {
-        int idx = _pts3DIdx[i];
-        x.push_back(_pts3D[idx].val[0]);
-        y.push_back(_pts3D[idx].val[1]);
-        z.push_back(_pts3D[idx].val[2]);
+    for (int i = 0; i < _pts3D.size(); i++) {
+        double x = _pts3D[i].val[0];
+        double y = _pts3D[i].val[1];
+        double z = _pts3D[i].val[2];
+        xmin = (x < xmin) ? x : xmin;
+        xmax = (x > xmax) ? x : xmax;
+        ymin = (y < ymin) ? y : ymin;
+        ymax = (y > ymax) ? y : ymax;
+        zmin = (z < zmin) ? z : zmin;
+        zmax = (z > zmax) ? z : zmax;
     }
     
-    sort(x.begin(),x.end());
-    sort(y.begin(),y.end());
-    sort(z.begin(),z.end());
-    int idx = round(_pts3D.size()/2.0);
-    _centroid = {x[idx],y[idx],z[idx]};
+    _centroid.x = (xmin+xmax)/2.0;
+    _centroid.y = (ymin+ymax)/2.0;
+    _centroid.z = (zmin+zmax)/2.0;
 }
 
 //find all frames with a number of mutually visible features higher than threshold

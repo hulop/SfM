@@ -28,8 +28,8 @@
 #include "Eigen/Dense"
 #include "ceres/ceres.h"
 #include "ceres/rotation.h"
-#include "../../cvUtils/VectorUtils.hpp"
-#include "../../cvUtils/GeometryUtils.hpp"
+#include "cvUtils/VectorUtils.hpp"
+#include "cvUtils/GeometryUtils.hpp"
 #include "brisk/brisk.h"
 
 #endif /* CTracker_hpp */
