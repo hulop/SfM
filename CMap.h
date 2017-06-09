@@ -64,20 +64,18 @@ public:
     
     void getPoints_Mutable(vector<double*> &pts3D);
     void getPoints(vector<Matx31d> &pts3D);
-    void getFramesConnectedToFrame(int frameNo, vector<int> &covisibleFrames, int threshold = 0);
+    //void getFramesConnectedToFrame(int frameNo, vector<int> &covisibleFrames, int threshold = 0);
     void getRepresentativeDescriptors(const vector<int> &pts3DIdx, Mat &descriptors);
     
     int getPointFrameVisibility(const int pt3DIdx);
     
     int getNPoints();
-    
-    Point3d getCentroid();
+  
 
 private:
     
     int countMatchesBetweenFrames(int f0, int f1);
-    void addCovisiblePoint(int idx0, int idx1, int increment = 1);
-    void updateCentroid();
+    //void addCovisiblePoint(int idx0, int idx1, int increment = 1);
     
     int _kfThreshold;
     float _trackThreshold;
@@ -93,12 +91,11 @@ private:
     vector<int> _pts3DIdx;
     int _lastPtNo;
     
-    unordered_multimap<int,int> _covisibilityFrameIdx;
-    unordered_map<tuple<int,int>,int> _covisibilityGraph;
+    //unordered_multimap<int,int> _covisibilityFrameIdx;
+    //unordered_map<tuple<int,int>,int> _covisibilityGraph;
     unordered_multimap<int,int> _pointInFrameIdx;
     unordered_multimap<int,int> _frameViewsPointIdx;
-    
-    Point3d _centroid;
+
 };
 
 

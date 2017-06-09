@@ -28,6 +28,7 @@
 #include "CKeyFrame.h"
 #include "CTracker.h"
 #include "CMap.h"
+#include "CScanGuidance.h"
 #include <opencv2/core/eigen.hpp>
 #include "CVUtils/Display2D.hpp"
 #include "CVUtils/VectorUtils.hpp"
@@ -38,7 +39,7 @@
 using namespace cv;
 using namespace std;
 
-#define DEBUGINFO 1
+//#define DEBUGINFO 1
 #define NOT_INITIALIZED 0
 #define RUNNING 1
 #define LOST 2
@@ -98,6 +99,10 @@ private:
     
     //mapper
     CMap _mapper;
+    
+    //object detector
+    CScanGuidance _guidance;
+    
     
     //motion history for predictive motion model
     vector<Matx33d> _R;

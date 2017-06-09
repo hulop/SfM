@@ -68,48 +68,48 @@ void CMap::addNewPoints(const vector<Matx31d> &pts3D, const vector<vector<int> >
         _lastPtNo++;
     }
     
-    //points have been observed in all frames
-    for (int i = 0; i < frameNo.size(); i++) {
-        for (int j = i+1; j < frameNo.size(); j++) {
-            addCovisiblePoint(frameNo[i], frameNo[j],pts3D.size());
-        }
-    }
+//    //points have been observed in all frames
+//    for (int i = 0; i < frameNo.size(); i++) {
+//        for (int j = i+1; j < frameNo.size(); j++) {
+//            addCovisiblePoint(frameNo[i], frameNo[j],pts3D.size());
+//        }
+//    }
     
 }
 
-void CMap::addCovisiblePoint(int idx0, int idx1, int increment) {
-    tuple<int,int> key0(idx0,idx1);
-    tuple<int,int> key1(idx1,idx0);
-    int isFound = _covisibilityGraph.count(key0);
-    if (isFound == 0) {
-        _covisibilityGraph[key0] = increment;
-        _covisibilityGraph[key1] = increment;
-        _covisibilityFrameIdx.emplace(idx0,idx1);
-        _covisibilityFrameIdx.emplace(idx1,idx0);
-    } else {
-        _covisibilityGraph[key0]+= increment;
-        _covisibilityGraph[key1]+= increment;
-        if (_covisibilityGraph[key0] == 0) {
-            //remove link (happens when increment is negative)
-            auto range = _covisibilityFrameIdx.equal_range(idx0);
-            for (auto it = range.first; it != range.second; ++it) {
-                if (it->second == idx1) {
-                    _covisibilityFrameIdx.erase(it);
-                    break;
-                }
-            }
-            range = _covisibilityFrameIdx.equal_range(idx1);
-            for (auto it = range.first; it != range.second; ++it) {
-                if (it->second == idx0) {
-                    _covisibilityFrameIdx.erase(it);
-                    break;
-                }
-            }
-            _covisibilityGraph.erase(key0);
-            _covisibilityGraph.erase(key1);
-        }
-    }
-}
+//void CMap::addCovisiblePoint(int idx0, int idx1, int increment) {
+//    tuple<int,int> key0(idx0,idx1);
+//    tuple<int,int> key1(idx1,idx0);
+//    int isFound = _covisibilityGraph.count(key0);
+//    if (isFound == 0) {
+//        _covisibilityGraph[key0] = increment;
+//        _covisibilityGraph[key1] = increment;
+//        _covisibilityFrameIdx.emplace(idx0,idx1);
+//        _covisibilityFrameIdx.emplace(idx1,idx0);
+//    } else {
+//        _covisibilityGraph[key0]+= increment;
+//        _covisibilityGraph[key1]+= increment;
+//        if (_covisibilityGraph[key0] == 0) {
+//            //remove link (happens when increment is negative)
+//            auto range = _covisibilityFrameIdx.equal_range(idx0);
+//            for (auto it = range.first; it != range.second; ++it) {
+//                if (it->second == idx1) {
+//                    _covisibilityFrameIdx.erase(it);
+//                    break;
+//                }
+//            }
+//            range = _covisibilityFrameIdx.equal_range(idx1);
+//            for (auto it = range.first; it != range.second; ++it) {
+//                if (it->second == idx0) {
+//                    _covisibilityFrameIdx.erase(it);
+//                    break;
+//                }
+//            }
+//            _covisibilityGraph.erase(key0);
+//            _covisibilityGraph.erase(key1);
+//        }
+//    }
+//}
 
 int CMap::getNPoints() {
     return _pts3DIdx.size();
@@ -126,8 +126,8 @@ void CMap::addPointMatches(const vector<int> &pts3DIdx, const vector<int> &pts2D
         _pointInFrameIdx.emplace(idx,frameNo);
         _frameViewsPointIdx.emplace(frameNo,idx);
         //update covisibility
-        for (int j = 0; j < _frameNo[idx].size()-1; j++)
-            addCovisiblePoint(frameNo, _frameNo[idx][j], 1);
+        //for (int j = 0; j < _frameNo[idx].size()-1; j++)
+        //    addCovisiblePoint(frameNo, _frameNo[idx][j], 1);
     }
 }
 
@@ -305,12 +305,6 @@ void CMap::getPoints_Mutable(vector<double*> &pts3D) {
 }
 
 
-Point3d CMap::getCentroid() {
-    updateCentroid();
-    return _centroid;
-    
-}
-
 void CMap::addDescriptors(const vector<int> &pts3DIdx, const cv::Mat &descriptors) {
     
     for (int i = 0; i < pts3DIdx.size(); i++) {
@@ -320,40 +314,20 @@ void CMap::addDescriptors(const vector<int> &pts3DIdx, const cv::Mat &descriptor
     
 }
 
-void CMap::updateCentroid() {
-    double xmin = LONG_MAX, xmax = LONG_MIN, ymin = LONG_MAX, ymax = LONG_MIN, zmin = LONG_MAX, zmax = LONG_MIN;
-    
-    for (int i = 0; i < _pts3D.size(); i++) {
-        double x = _pts3D[i].val[0];
-        double y = _pts3D[i].val[1];
-        double z = _pts3D[i].val[2];
-        xmin = (x < xmin) ? x : xmin;
-        xmax = (x > xmax) ? x : xmax;
-        ymin = (y < ymin) ? y : ymin;
-        ymax = (y > ymax) ? y : ymax;
-        zmin = (z < zmin) ? z : zmin;
-        zmax = (z > zmax) ? z : zmax;
-    }
-    
-    _centroid.x = (xmin+xmax)/2.0;
-    _centroid.y = (ymin+ymax)/2.0;
-    _centroid.z = (zmin+zmax)/2.0;
-}
-
 //find all frames with a number of mutually visible features higher than threshold
-void CMap::getFramesConnectedToFrame(int frameNo, vector<int> &covisibleFrames, int threshold) {
-
-    //covisibleFrames.push_back(frameNo);
-    
-    //find frames that share link
-    auto range = _covisibilityFrameIdx.equal_range(frameNo);
-    for (auto it = range.first; it!= range.second; ++it) {
-        tuple<int,int> key(frameNo,it->second);
-        int linkStrength = _covisibilityGraph[key];
-        if (linkStrength > threshold)
-            covisibleFrames.push_back(it->second);
-    }
-}
+//void CMap::getFramesConnectedToFrame(int frameNo, vector<int> &covisibleFrames, int threshold) {
+//
+//    //covisibleFrames.push_back(frameNo);
+//    
+//    //find frames that share link
+//    auto range = _covisibilityFrameIdx.equal_range(frameNo);
+//    for (auto it = range.first; it!= range.second; ++it) {
+//        tuple<int,int> key(frameNo,it->second);
+//        int linkStrength = _covisibilityGraph[key];
+//        if (linkStrength > threshold)
+//            covisibleFrames.push_back(it->second);
+//    }
+//}
 
 
 void CMap::getPointsInFrame(vector<int> &pts3DIdx, const int frameNo) {
@@ -455,36 +429,36 @@ void CMap::removePoints(const vector<int> &ptsCullIdx, vector<int> &ptsStatusFla
                     }
                 }
                 
-                unordered_multimap<int,int>::iterator it_copy = it_out;
-                for (unordered_multimap<int,int>::iterator it_in = ++it_copy; it_in != endFrame; ++it_in) {
-                    
-                    //update covisibility graph
-                    int idx1 = it_in->second;
-                    tuple<int,int> key0(idx0,idx1);
-                    tuple<int,int> key1(idx1,idx0);
-                    _covisibilityGraph[key0]+= -1;
-                    _covisibilityGraph[key1]+= -1;
-                    
-                    //if link strength goes to zero, remove link
-                    if (_covisibilityGraph[key0] == 0) {
-                        auto range = _covisibilityFrameIdx.equal_range(idx0);
-                        for (auto it = range.first; it != range.second; ++it) {
-                            if (it->second == idx1) {
-                                _covisibilityFrameIdx.erase(it);
-                                break;
-                            }
-                        }
-                        range = _covisibilityFrameIdx.equal_range(idx1);
-                        for (auto it = range.first; it != range.second; ++it) {
-                            if (it->second == idx0) {
-                                _covisibilityFrameIdx.erase(it);
-                                break;
-                            }
-                        }
-                        _covisibilityGraph.erase(key0);
-                        _covisibilityGraph.erase(key1);
-                    }
-                }
+//                unordered_multimap<int,int>::iterator it_copy = it_out;
+//                for (unordered_multimap<int,int>::iterator it_in = ++it_copy; it_in != endFrame; ++it_in) {
+//                    
+//                    //update covisibility graph
+//                    int idx1 = it_in->second;
+//                    tuple<int,int> key0(idx0,idx1);
+//                    tuple<int,int> key1(idx1,idx0);
+//                    _covisibilityGraph[key0]+= -1;
+//                    _covisibilityGraph[key1]+= -1;
+//                    
+//                    //if link strength goes to zero, remove link
+//                    if (_covisibilityGraph[key0] == 0) {
+//                        auto range = _covisibilityFrameIdx.equal_range(idx0);
+//                        for (auto it = range.first; it != range.second; ++it) {
+//                            if (it->second == idx1) {
+//                                _covisibilityFrameIdx.erase(it);
+//                                break;
+//                            }
+//                        }
+//                        range = _covisibilityFrameIdx.equal_range(idx1);
+//                        for (auto it = range.first; it != range.second; ++it) {
+//                            if (it->second == idx0) {
+//                                _covisibilityFrameIdx.erase(it);
+//                                break;
+//                            }
+//                        }
+//                        _covisibilityGraph.erase(key0);
+//                        _covisibilityGraph.erase(key1);
+//                    }
+//                }
             }
             
             //remove point
@@ -549,21 +523,21 @@ void CMap::removeFrame(const int frameNo, const vector<int> &framePtsIdx) {
     
     //remove from graphs
     _frameViewsPointIdx.erase(frameNo);
-    pair<unordered_multimap<int,int>::iterator,unordered_multimap<int,int>::iterator> affectedFrames = _covisibilityFrameIdx.equal_range(frameNo);
-    for (auto it = affectedFrames.first; it != affectedFrames.second; ++it) {
-        pair<unordered_multimap<int,int>::iterator,unordered_multimap<int,int>::iterator> singleFrame = _covisibilityFrameIdx.equal_range(it->second);
-        for (auto it2 = singleFrame.first; it2 != singleFrame.second; ++it2) {
-            if (it2->second == frameNo) {
-                _covisibilityFrameIdx.erase(it2);
-                break;
-            }
-        }
-        tuple<int,int> key0(frameNo,it->second);
-        tuple<int,int> key1(it->second,frameNo);
-        _covisibilityGraph.erase(key0);
-        _covisibilityGraph.erase(key1);
-    }
-    _covisibilityFrameIdx.erase(frameNo);
+//    pair<unordered_multimap<int,int>::iterator,unordered_multimap<int,int>::iterator> affectedFrames = _covisibilityFrameIdx.equal_range(frameNo);
+//    for (auto it = affectedFrames.first; it != affectedFrames.second; ++it) {
+//        pair<unordered_multimap<int,int>::iterator,unordered_multimap<int,int>::iterator> singleFrame = _covisibilityFrameIdx.equal_range(it->second);
+//        for (auto it2 = singleFrame.first; it2 != singleFrame.second; ++it2) {
+//            if (it2->second == frameNo) {
+//                _covisibilityFrameIdx.erase(it2);
+//                break;
+//            }
+//        }
+//        tuple<int,int> key0(frameNo,it->second);
+//        tuple<int,int> key1(it->second,frameNo);
+//        _covisibilityGraph.erase(key0);
+//        _covisibilityGraph.erase(key1);
+//    }
+//    _covisibilityFrameIdx.erase(frameNo);
 }
 
 

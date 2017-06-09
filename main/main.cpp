@@ -68,7 +68,7 @@ int main(int argc, const char * argv[]) {
     
     //read loop
     Mat firstFrame, frameIn;
-    for (int i = 0; i < 350; i++) {
+    for (int i = 0; i < frameCount; i++) {
 #ifdef DEBUGINFO
         cout << "Frame " << i << endl;
 #endif

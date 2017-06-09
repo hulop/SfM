@@ -21,6 +21,11 @@
  *******************************************************************************/
 
 #include "CSfM.h"
+//TO DO:
+//add reprojection error check after BA to flag frames to be culled (they introduce instability in the BA process)
+//check whether to actually add a keyframe depending on how many new features are actually found
+//double check point culling and frame culling policy, I think we are being too generous
+
 
 CSfM::CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d) : _tracker(K,d,imSize)
 {
@@ -35,7 +40,6 @@ CSfM::CSfM(const Matx33d &K, const Size &imSize, const vector<double> &d) : _tra
     _frameCount = 0; //frame counter
     _motionHistoryLength = 2; //how many frames should you remember the pose for depending on how complicated the motion model is
 
-    
     //time threshold before adding new keyframe
     _newKFrameTimeLag = 10;
     
@@ -59,10 +63,10 @@ void CSfM::addFrame(cv::Mat frameIn) {
     
     //set frame
     _tracker.setCurrentFrame(frameIn,_frameCount);
-    //_currFrame.setFrame(frameIn,_frameCount);
     
     bool success;
     int nCulledPts;
+    vector<Matx31d> mapPts;
     
     switch (_state) {
         case NOT_INITIALIZED:
@@ -73,6 +77,9 @@ void CSfM::addFrame(cv::Mat frameIn) {
             if (_keyFrameAdded) {
                 mapping();
             }
+            _mapper.getPoints(mapPts);
+            _guidance.calculateMask(_tracker._prevFrame.getFrame(), mapPts, _tracker._prevFrame.getIntrinsicUndistorted(), _tracker._prevFrame.getProjectionMatrix());
+
             break;
         case LOST:
             success = recovery();
@@ -80,20 +87,19 @@ void CSfM::addFrame(cv::Mat frameIn) {
         default:
             break;
     }
-
-    //get centroid
-    Point3d c = _mapper.getCentroid();
     
-    //debug show points
+    //DEBUG visualisation
+    Mat dShow = Display2D::drawRotatedRectangle(_tracker._prevFrame.getFrameGrey(), _guidance.getBoundingBox(), 3, Scalar(255,0,0), 1);
+    
+    //show points
     vector<Matx31d> showPts3D, allPts3D; vector<int> showPts3DIdx;
     _tracker._prevFrame.getMatchedPoints(showPts3DIdx);
     _mapper.getPointsAtIdx(showPts3DIdx, showPts3D);
     _mapper.getPoints(allPts3D);
-    Mat dShow = Display2D::display3DProjections(_tracker._prevFrame.getFrameGrey(), _tracker._prevFrame.getIntrinsicUndistorted(), _tracker._prevFrame.getRotation(), _tracker._prevFrame.getTranslation(), allPts3D, 3, Scalar(0,0,255),1);
-    dShow = Display2D::display3DProjections(dShow, _tracker._prevFrame.getIntrinsicUndistorted(), _tracker._prevFrame.getRotation(), _tracker._prevFrame.getTranslation(), showPts3D, 3, Scalar(0,255,0));
-    Point2d c2d = GeometryUtils::projectPoint(_tracker._prevFrame.getRotation(), _tracker._prevFrame.getTranslation(), _tracker._prevFrame.getIntrinsicUndistorted(), c);
-    circle(dShow, c2d/2.0, 5, Scalar(255,255,0),-1,CV_AA);
-    //_vOut << dShow;
+    dShow = Display2D::display3DProjections(dShow, _tracker._prevFrame.getIntrinsicUndistorted(), _tracker._prevFrame.getRotation(), _tracker._prevFrame.getTranslation(), allPts3D, 3, Scalar(0,0,255),1);
+    dShow = Display2D::display3DProjections(dShow, _tracker._prevFrame.getIntrinsicUndistorted(), _tracker._prevFrame.getRotation(), _tracker._prevFrame.getTranslation(), showPts3D, 3, Scalar(0,255,0),1);
+    dShow = Display2D::display3DProjections(dShow, _tracker._prevFrame.getIntrinsicUndistorted(), _tracker._prevFrame.getRotation(), _tracker._prevFrame.getTranslation(), {_guidance.getCentroid()}, 6, Scalar(255,0,0));
+//    _vOut << dShow;
     imshow("Debug",dShow);
     waitKey(1);
 
@@ -110,11 +116,14 @@ bool CSfM::mapping() {
     // Map point creation
     
     // match current keyframe against all other connected keyframes
-    // get connected keyframes
+    // get all keyframes
     vector<int> connectedKFNo;
     int lastKFIdx = _kFrames.size() -1;
     int lastKFNo = _kFrames[lastKFIdx].getFrameNo();
-    _mapper.getFramesConnectedToFrame(lastKFNo, connectedKFNo, _covisibilityThreshold);
+    //_mapper.getFramesConnectedToFrame(lastKFNo, connectedKFNo, _covisibilityThreshold);
+    for (int i = 0; i < _kFrames.size()-1; i++) {
+        connectedKFNo.push_back(_kFrames[i].getFrameNo());
+    }
     
     //matching against connected keyframes
     int count = 0;
@@ -233,7 +242,7 @@ bool CSfM::mapping() {
     
     // ORBSLAM 6.E.
     // Local KF culling
-    int cullFrameCount = 0;//cullKeyFrames();
+    int cullFrameCount = cullKeyFrames();
 #ifdef DEBUGINFO
     cout << "(MAPPER) Culled " << cullFrameCount << " key frames" << endl;
 #endif
@@ -242,7 +251,10 @@ bool CSfM::mapping() {
     // Local BA
     lastKFIdx -= cullFrameCount;
     connectedKFNo.clear();
-    _mapper.getFramesConnectedToFrame(lastKFNo, connectedKFNo, _covisibilityThreshold);
+    //_mapper.getFramesConnectedToFrame(lastKFNo, connectedKFNo, _covisibilityThreshold);
+    for (int i = 0; i < _kFrames.size()-1; i++) {
+        connectedKFNo.push_back(_kFrames[i].getFrameNo());
+    }
     connectedKFNo.push_back(lastKFNo);
     bundleAdjustment(connectedKFNo,CTracker::BA_TYPE::STRUCT_AND_POSE);
     
@@ -625,7 +637,10 @@ void CSfM::findMapPointsInCurrentFrame() {
     //find keyframes connected in covisibility graph
     int refKno = _kFrames[_kFrames.size()-1].getFrameNo();
     vector<int> covisibleFrameIdx;
-    _mapper.getFramesConnectedToFrame(refKno, covisibleFrameIdx, _covisibilityThreshold);
+    for (int i = 0; i < _kFrames.size()-1; i++) {
+        covisibleFrameIdx.push_back(_kFrames[i].getFrameNo());
+    }
+    //_mapper.getFramesConnectedToFrame(refKno, covisibleFrameIdx, _covisibilityThreshold);
     covisibleFrameIdx.push_back(refKno);
     
     //get all unmatched 3d points visible from covisible frames
